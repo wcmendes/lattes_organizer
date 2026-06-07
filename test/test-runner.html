@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ComprovaLattes — Test Runner</title>
+    <link rel="stylesheet" href="../css/styles.css">
+    <style>
+        body { padding: 2rem; font-family: monospace; }
+        .test-pass { color: #1b7a3d; }
+        .test-fail { color: #b91c1c; }
+        .test-summary { margin-top: 2rem; padding: 1rem; border: 1px solid #ccc; border-radius: 4px; }
+        h1 { margin-bottom: 1rem; }
+        h2 { margin-top: 1.5rem; margin-bottom: 0.5rem; }
+        .result { padding: 0.25rem 0; }
+    </style>
+</head>
+<body>
+    <h1>ComprovaLattes — Test Runner</h1>
+    <div id="output"></div>
+    <div id="summary" class="test-summary"></div>
+
+    <script type="module">
+        const output = document.getElementById('output');
+        const summary = document.getElementById('summary');
+
+        function renderResults(title, results) {
+            const section = document.createElement('div');
+            section.innerHTML = `<h2>${title}</h2>`;
+            
+            let passed = 0;
+            let failed = 0;
+
+            results.forEach(r => {
+                const div = document.createElement('div');
+                div.className = `result ${r.passed ? 'test-pass' : 'test-fail'}`;
+                if (r.passed) {
+                    div.textContent = `✓ ${r.name}`;
+                    passed++;
+                } else {
+                    div.textContent = `✗ ${r.name}: ${r.error}`;
+                    failed++;
+                }
+                section.appendChild(div);
+            });
+
+            output.appendChild(section);
+            return { passed, failed };
+        }
+
+        // Import and run tests
+        try {
+            await import('./unit/toast.test.js');
+        } catch (e) {
+            console.error('Toast tests error:', e);
+        }
+
+        try {
+            await import('./unit/overlay.test.js');
+        } catch (e) {
+            console.error('Overlay tests error:', e);
+        }
+
+        // Wait a tick for results
+        setTimeout(() => {
+            let totalPassed = 0;
+            let totalFailed = 0;
+
+            if (window.__toastTestResults) {
+                const r = renderResults('Toast Tests', window.__toastTestResults);
+                totalPassed += r.passed;
+                totalFailed += r.failed;
+            }
+
+            if (window.__overlayTestResults) {
+                const r = renderResults('Overlay Tests', window.__overlayTestResults);
+                totalPassed += r.passed;
+                totalFailed += r.failed;
+            }
+
+            summary.innerHTML = `
+                <strong>Summary:</strong> 
+                <span class="test-pass">${totalPassed} passed</span>, 
+                <span class="test-fail">${totalFailed} failed</span>, 
+                ${totalPassed + totalFailed} total
+            `;
+            
+            // Set exit code for CI (if running headless)
+            window.__testsPassed = totalFailed === 0;
+        }, 100);
+    </script>
+</body>
+</html>

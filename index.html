@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ComprovaLattes</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <div id="nav-container"></div>
+    <div id="app"></div>
+
+    <!-- Google Identity Services -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+
+    <!-- Bibliotecas externas via CDN com fallback local -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.min.mjs"
+            onerror="this.src='lib/pdf.min.js'"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.worker.min.mjs"
+            onerror="this.src='lib/pdf.worker.min.js'"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"
+            onerror="this.src='lib/tesseract.min.js'"></script>
+    <script src="https://cdn.jsdelivr.net/npm/fuzzball@2/dist/fuzzball.umd.min.js"
+            onerror="this.src='lib/fuzzball.umd.min.js'"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3/dist/jszip.min.js"
+            onerror="this.src='lib/jszip.min.js'"></script>
+
+    <!-- Módulo principal da aplicação -->
+    <script type="module" src="js/app.js"></script>
+</body>
+</html>
