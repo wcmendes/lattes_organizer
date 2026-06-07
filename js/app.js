@@ -13,7 +13,7 @@
  * @module app
  */
 
-import { isAuthenticated, signOut, getUserName } from './auth.js';
+import { isAuthenticated, signOut, getUserName, initAuth } from './auth.js';
 import { loadConfig } from './config.js';
 import { initDriveFolders } from './core/drive-init.js';
 import {
@@ -231,6 +231,13 @@ function initApp() {
   // 3. Configure router auth guard
   setAuthCheck(isAuthenticated);
 
+  // 3b. Initialize Google Auth if client_id is configured
+  if (config.client_id) {
+    initAuth({ clientId: config.client_id });
+  } else {
+    console.warn('[App] Client ID não configurado. Acesse #config para configurar.');
+  }
+
   // 4. Register lifecycle callback
   setOnRouteChange(handleRouteChange);
 
@@ -249,6 +256,11 @@ function initApp() {
   // If authenticated → defaults to #dashboard
   // If not authenticated → redirects to #login
   initRouter();
+
+  // 6b. If no client_id configured, force redirect to #config for setup
+  if (!config.client_id) {
+    window.location.hash = '#config';
+  }
 
   // 7. Initialize Drive folder structure if authenticated (Req 14.1)
   // Non-blocking: failures are logged but don't break the app

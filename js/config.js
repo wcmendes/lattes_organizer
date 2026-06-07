@@ -23,7 +23,8 @@ const DEBOUNCE_MAX_MS = 5000;
 const DEFAULT_CONFIG = {
   threshold: 50,
   spreadsheet_id: null,
-  root_folder_id: null
+  root_folder_id: null,
+  client_id: null
 };
 
 /** @type {number|null} debounce timer for Sheets persistence */

@@ -72,6 +72,23 @@ function renderSetupFlow(config) {
             Bem-vindo ao ComprovaLattes! Configure onde seus dados serão armazenados.
           </p>
 
+          <!-- Client ID Setup -->
+          <div class="form-group mt-lg">
+            <label class="form-label" for="setup-client-id">
+              Client ID (Google OAuth2)
+            </label>
+            <p class="text-muted settings-setup__hint">
+              Obtenha no Google Cloud Console → APIs e serviços → Credenciais → ID do cliente OAuth.
+            </p>
+            <input
+              type="text"
+              id="setup-client-id"
+              class="form-input"
+              placeholder="123456789-xxxxx.apps.googleusercontent.com"
+              value="${config.client_id || ''}"
+            />
+          </div>
+
           <!-- Spreadsheet Setup -->
           <div class="form-group mt-lg">
             <label class="form-label" for="setup-spreadsheet-id">
@@ -151,11 +168,18 @@ function mountSetupFlow() {
 
   // Enable save button when both fields have values
   const checkSaveEnabled = () => {
-    btnSaveSetup.disabled = !(spreadsheetInput.value.trim() && folderInput.value.trim());
+    const clientIdInput = document.getElementById('setup-client-id');
+    const hasClientId = clientIdInput && clientIdInput.value.trim();
+    btnSaveSetup.disabled = !hasClientId;
   };
 
+  const clientIdInput = document.getElementById('setup-client-id');
+  if (clientIdInput) {
+    clientIdInput.addEventListener('input', checkSaveEnabled);
+  }
   spreadsheetInput.addEventListener('input', checkSaveEnabled);
   folderInput.addEventListener('input', checkSaveEnabled);
+  checkSaveEnabled();
 
   // Create spreadsheet automatically
   btnCreateSpreadsheet.addEventListener('click', async () => {
@@ -211,6 +235,7 @@ function mountSetupFlow() {
 
   // Save setup
   btnSaveSetup.addEventListener('click', async () => {
+    const clientIdVal = document.getElementById('setup-client-id').value.trim();
     const spreadsheetId = spreadsheetInput.value.trim();
     const folderId = folderInput.value.trim();
     const indicator = document.getElementById('setup-save-indicator');
@@ -221,43 +246,25 @@ function mountSetupFlow() {
     hideMessage(folderError);
     btnSaveSetup.disabled = true;
 
-    // Validate spreadsheet access
-    const spreadsheetValid = await validateSpreadsheet(spreadsheetId, spreadsheetError);
-    if (!spreadsheetValid) {
-      btnSaveSetup.disabled = false;
-      return;
-    }
-
-    // Validate folder access
-    const folderValid = await validateFolder(folderId, folderError);
-    if (!folderValid) {
-      btnSaveSetup.disabled = false;
-      return;
-    }
-
-    // Save config
+    // Save config (client_id is always saved, spreadsheet/folder are optional at this stage)
     const config = loadConfig();
-    config.spreadsheet_id = spreadsheetId;
-    config.root_folder_id = folderId;
+    config.client_id = clientIdVal;
+    if (spreadsheetId) config.spreadsheet_id = spreadsheetId;
+    if (folderId) config.root_folder_id = folderId;
     saveConfig(config);
 
-    showSaveIndicator(indicator, 'Salvo ✓');
-
-    // Persist to sheets
-    try {
-      await persistConfigToSheets(config);
-    } catch (error) {
-      showSaveIndicator(indicator, 'Salvo localmente (falha na planilha)');
+    // Initialize auth with the new client ID
+    if (clientIdVal) {
+      const { initAuth } = await import('../auth.js');
+      initAuth({ clientId: clientIdVal });
     }
 
-    // Reload view to switch from setup to normal settings
+    showSaveIndicator(indicator, 'Salvo ✓ — Agora faça login com o Google');
+
+    // Redirect to login after a brief delay
     setTimeout(() => {
-      const appEl = document.getElementById('app');
-      if (appEl) {
-        appEl.innerHTML = render();
-        mount();
-      }
-    }, 1000);
+      window.location.hash = '#login';
+    }, 1500);
   });
 }
 

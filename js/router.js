@@ -201,7 +201,7 @@ export function registerDefaultRoutes(viewHandlers = {}) {
     { path: 'importacao', requiresAuth: true },
     { path: 'revisao', requiresAuth: true },
     { path: 'ocultos', requiresAuth: true },
-    { path: 'config', requiresAuth: true },
+    { path: 'config', requiresAuth: false },
   ];
 
   for (const { path, requiresAuth } of defaultRoutes) {
