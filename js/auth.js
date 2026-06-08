@@ -184,6 +184,25 @@ export function onUserInfoReady(callback) {
   _onUserInfoReady = callback;
 }
 
+/**
+ * Fetches user info from Google if not already saved in token.
+ * Useful on page reload when token exists but name/photo weren't saved yet.
+ * @returns {Promise<void>}
+ */
+export async function refreshUserInfo() {
+  const tokenData = getStoredTokenData();
+  if (!tokenData || !tokenData.access_token) return;
+  if (tokenData.user_name && tokenData.user_photo) return; // Already have it
+
+  const info = await fetchUserInfo(tokenData.access_token);
+  if (info) {
+    tokenData.user_name = info.name || info.email || null;
+    tokenData.user_photo = info.picture || null;
+    storeToken(tokenData);
+    if (_onUserInfoReady) _onUserInfoReady();
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------

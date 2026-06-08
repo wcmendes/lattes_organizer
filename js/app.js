@@ -13,7 +13,7 @@
  * @module app
  */
 
-import { isAuthenticated, signOut, getUserName, getUserPhoto, onUserInfoReady, initAuth } from './auth.js';
+import { isAuthenticated, signOut, getUserName, getUserPhoto, onUserInfoReady, refreshUserInfo, initAuth } from './auth.js';
 import { loadConfig } from './config.js';
 import { initDriveFolders } from './core/drive-init.js';
 import {
@@ -104,8 +104,9 @@ function renderNavBar(activeRoute) {
 
   return `
     <nav class="nav" aria-label="Navegação principal">
+      <button class="nav__hamburger" id="btn-hamburger" type="button" aria-label="Menu" aria-expanded="false">☰</button>
       <span class="nav__brand">ComprovaLattes</span>
-      <ul class="nav__links">
+      <ul class="nav__links" id="nav-links">
         ${linksHtml}
       </ul>
       <div class="nav__user">
@@ -138,6 +139,17 @@ function updateNavBar(route) {
   if (btnSignout) {
     btnSignout.addEventListener('click', () => {
       signOut();
+    });
+  }
+
+  // Attach hamburger menu toggle
+  const btnHamburger = document.getElementById('btn-hamburger');
+  const navLinks = document.getElementById('nav-links');
+  if (btnHamburger && navLinks) {
+    btnHamburger.addEventListener('click', () => {
+      const isOpen = navLinks.classList.toggle('nav__links--open');
+      btnHamburger.setAttribute('aria-expanded', String(isOpen));
+      btnHamburger.textContent = isOpen ? '✕' : '☰';
     });
   }
 }
@@ -282,6 +294,11 @@ function initApp() {
   if (isAuthenticated()) {
     initDriveFolders().catch(err => {
       console.warn('[App] Inicialização de pastas do Drive falhou:', err.message);
+    });
+
+    // Fetch user info (name/photo) if not already cached
+    refreshUserInfo().catch(err => {
+      console.warn('[App] Falha ao buscar info do usuário:', err.message);
     });
   }
 

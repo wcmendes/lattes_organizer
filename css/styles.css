@@ -254,6 +254,11 @@ textarea:focus-visible {
   border-color: rgba(255, 255, 255, 0.8);
   color: #ffffff;
 }
+
+/* Hamburger — hidden on desktop */
+.nav__hamburger {
+  display: none;
+}
   color: rgba(255, 255, 255, 0.9);
 }
 
@@ -884,24 +889,52 @@ textarea:focus-visible {
     flex-wrap: wrap;
     height: auto;
     min-height: var(--nav-height);
-    padding-bottom: var(--spacing-xs);
   }
 
   .nav__links {
+    display: none;
     order: 3;
     width: 100%;
-    flex-wrap: wrap;
-    gap: var(--spacing-xs);
-    padding-top: var(--spacing-xs);
+    flex-direction: column;
+    gap: 0;
+    padding: var(--spacing-sm) 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.2);
+  }
+
+  .nav__links.nav__links--open {
+    display: flex;
   }
 
   .nav__link {
     font-size: var(--font-size-sm);
-    padding: var(--spacing-xs) var(--spacing-sm);
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-radius: 0;
   }
 
   .nav__brand {
     margin-right: auto;
+  }
+
+  .nav__hamburger {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    color: #ffffff;
+    font-size: 1.5rem;
+    padding: var(--spacing-xs);
+    cursor: pointer;
+    margin-right: var(--spacing-sm);
+    order: -1;
+  }
+
+  .nav__user {
+    order: 2;
+  }
+
+  .nav__username {
+    display: none;
   }
 
   .toast-container {
