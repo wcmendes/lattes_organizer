@@ -373,7 +373,7 @@ function renderEntryItem(entry) {
         </span>
         ${arquivo ? `<span class="entry-item__file">${arquivo}</span>` : ''}
       </div>
-      <button class="entry-item__hide-btn" data-hide-entry-id="${entry.id}" type="button" title="Ocultar entrada" aria-label="Ocultar">👁</button>
+      <button class="entry-item__hide-btn" data-hide-entry-id="${entry.id}" type="button" title="Ocultar entrada" aria-label="Ocultar">🚫</button>
     </div>
   `;
 }
@@ -776,9 +776,9 @@ async function renderUnmappedDetail(container, entry) {
             <a href="https://drive.google.com/file/d/${encodeURIComponent(file.id)}/view"
                target="_blank"
                rel="noopener noreferrer"
-               class="btn btn--outline btn--sm">Ver</a>
-            <button class="btn btn--primary btn--sm btn-vincular" data-file-id="${file.id}" data-file-name="${escapeHtml(file.name)}" type="button">Vincular</button>
-            <button class="btn btn--outline btn--sm btn-excluir-file" data-file-id="${file.id}" data-file-name="${escapeHtml(file.name)}" type="button" style="color: var(--color-danger); border-color: var(--color-danger);" title="Excluir">🗑</button>
+               class="btn btn--outline btn--sm" title="Abrir no Drive">📂</a>
+            <button class="btn btn--primary btn--sm btn-vincular" data-file-id="${file.id}" data-file-name="${escapeHtml(file.name)}" type="button" title="Vincular a esta entrada">🔗</button>
+            <button class="btn btn--outline btn--sm btn-excluir-file" data-file-id="${file.id}" data-file-name="${escapeHtml(file.name)}" type="button" style="color: var(--color-error); border-color: var(--color-error);" title="Excluir arquivo">🗑</button>
           </div>
           <div class="entries-detail__preview-container" data-preview-for="${file.id}" style="display:none;">
             ${isImage

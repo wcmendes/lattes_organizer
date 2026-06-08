@@ -1302,7 +1302,6 @@ textarea:focus-visible {
 
 .entries-view {
   padding-top: var(--spacing-xl);
-  overflow: hidden;
 }
 
 .entries-view__title {
@@ -1369,8 +1368,6 @@ textarea:focus-visible {
     grid-template-columns: 1fr 320px;
     gap: var(--spacing-lg);
     align-items: start;
-    max-width: 100%;
-    overflow: hidden;
   }
 }
 
@@ -1535,8 +1532,8 @@ textarea:focus-visible {
   border-radius: var(--radius-md);
   padding: var(--spacing-lg);
   min-height: 200px;
-  overflow: hidden;
   min-width: 0;
+  word-break: break-word;
 }
 
 .entries-detail__empty {
