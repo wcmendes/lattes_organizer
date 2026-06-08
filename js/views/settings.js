@@ -15,7 +15,7 @@
 
 import { loadConfig, saveConfig } from '../config.js';
 import { createSpreadsheet, getRows } from '../services/sheets.js';
-import { createFolder, findFolder } from '../services/drive.js';
+import { createFolder, findFolder, moveFile } from '../services/drive.js';
 
 /** @type {number|null} Debounce timer for save operations */
 let saveTimer = null;
@@ -185,6 +185,12 @@ function mountSetupFlow() {
   btnCreateSpreadsheet.addEventListener('click', async () => {
     const errorEl = document.getElementById('setup-spreadsheet-error');
     const successEl = document.getElementById('setup-spreadsheet-success');
+
+    // Validate: folder must be created/configured first
+    if (!folderInput.value.trim()) {
+      showError(errorEl, 'Crie ou configure a pasta raiz primeiro (abaixo).');
+      return;
+    }
     hideMessage(errorEl);
     hideMessage(successEl);
     btnCreateSpreadsheet.disabled = true;
@@ -196,6 +202,23 @@ function mountSetupFlow() {
         { name: 'categorias', headers: ['id', 'nome_xml', 'nome_display', 'ativa', 'pasta_drive_id'] },
         { name: 'config', headers: ['chave', 'valor'] }
       ]);
+
+      // Move spreadsheet into ComprovaLattes folder (if folder exists or create it)
+      try {
+        let rootFolderId = folderInput.value.trim();
+        if (!rootFolderId) {
+          rootFolderId = await findFolder('ComprovaLattes', 'root');
+          if (!rootFolderId) {
+            rootFolderId = await createFolder('ComprovaLattes', 'root');
+          }
+          folderInput.value = rootFolderId;
+          checkSaveEnabled();
+        }
+        await moveFile(spreadsheetId, 'root', rootFolderId);
+      } catch (moveErr) {
+        console.warn('[Settings] Não foi possível mover planilha para pasta:', moveErr.message);
+      }
+
       spreadsheetInput.value = spreadsheetId;
       showSuccess(successEl, 'Planilha "ComprovaLattes" criada com sucesso.');
       checkSaveEnabled();
@@ -438,6 +461,21 @@ function mountSettingsForm() {
           { name: 'categorias', headers: ['id', 'nome_xml', 'nome_display', 'ativa', 'pasta_drive_id'] },
           { name: 'config', headers: ['chave', 'valor'] }
         ]);
+
+        // Move spreadsheet into ComprovaLattes folder
+        try {
+          const config = loadConfig();
+          let rootFolderId = config.root_folder_id;
+          if (!rootFolderId) {
+            rootFolderId = await findFolder('ComprovaLattes', 'root');
+          }
+          if (rootFolderId) {
+            await moveFile(spreadsheetId, 'root', rootFolderId);
+          }
+        } catch (moveErr) {
+          console.warn('[Settings] Não foi possível mover planilha para pasta:', moveErr.message);
+        }
+
         spreadsheetInput.value = spreadsheetId;
         debouncedSave({ spreadsheet_id: spreadsheetId }, indicator);
       } catch (error) {

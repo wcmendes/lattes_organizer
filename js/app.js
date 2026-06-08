@@ -89,12 +89,16 @@ function verifyCDNLibraries() {
  * @returns {string} HTML string for the nav bar
  */
 function renderNavBar(activeRoute) {
-  const userName = getUserName() || 'Usuário';
+  const userName = getUserName();
 
   const linksHtml = NAV_LINKS.map(({ path, label }) => {
     const activeClass = path === activeRoute ? ' nav__link--active' : '';
     return `<li><a href="#${path}" class="nav__link${activeClass}">${label}</a></li>`;
   }).join('\n        ');
+
+  const userHtml = userName
+    ? `<span class="nav__username">${escapeHtml(userName)}</span>`
+    : '';
 
   return `
     <nav class="nav" aria-label="Navegação principal">
@@ -103,7 +107,7 @@ function renderNavBar(activeRoute) {
         ${linksHtml}
       </ul>
       <div class="nav__user">
-        <span class="nav__username">${escapeHtml(userName)}</span>
+        ${userHtml}
         <button class="btn btn--outline btn--sm" id="btn-signout" type="button">Sair</button>
       </div>
     </nav>

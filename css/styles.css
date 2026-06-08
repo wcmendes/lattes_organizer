@@ -163,6 +163,11 @@ textarea:focus-visible {
   padding-bottom: var(--spacing-xl);
 }
 
+/* Espaço para a nav fixa no conteúdo */
+#app {
+  padding-top: calc(var(--nav-height) + var(--spacing-md));
+}
+
 /* ==========================================================================
    4. Navegação
    ========================================================================== */
@@ -228,6 +233,20 @@ textarea:focus-visible {
 
 .nav__username {
   font-size: var(--font-size-sm);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+/* Botão "Sair" na nav — branco sobre fundo escuro */
+.nav .btn--outline {
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.5);
+}
+
+.nav .btn--outline:hover:not(:disabled) {
+  background-color: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.8);
+  color: #ffffff;
+}
   color: rgba(255, 255, 255, 0.9);
 }
 
@@ -1883,4 +1902,75 @@ textarea:focus-visible {
   .hidden-view__btn-reactivate {
     width: 100%;
   }
+}
+
+
+/* ==========================================================================
+   19. Drag-and-Drop Zones
+   ========================================================================== */
+
+.import-view__dropzone {
+  border: 2px dashed transparent;
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+  transition: border-color var(--transition-fast), background-color var(--transition-fast);
+}
+
+.import-view__dropzone--active {
+  border-color: var(--color-primary-light);
+  background-color: var(--color-info-bg);
+}
+
+.entries-detail__unmapped {
+  border: 2px dashed transparent;
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+  transition: border-color var(--transition-fast), background-color var(--transition-fast);
+}
+
+.entries-detail__dropzone--active {
+  border-color: var(--color-primary-light);
+  background-color: var(--color-info-bg);
+}
+
+.entries-detail__drop-hint {
+  font-style: italic;
+  text-align: center;
+}
+
+
+/* ==========================================================================
+   20. Footer — Rodapé
+   ========================================================================== */
+
+.app-footer {
+  border-top: 1px solid var(--color-border);
+  background-color: var(--color-surface);
+  padding: var(--spacing-lg) 0;
+  margin-top: var(--spacing-2xl);
+  text-align: center;
+}
+
+.app-footer__text {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+  margin-bottom: var(--spacing-xs);
+  line-height: 1.6;
+}
+
+.app-footer__text:last-child {
+  margin-bottom: 0;
+}
+
+.app-footer__text a {
+  color: var(--color-primary-light);
+}
+
+.app-footer__text a:hover {
+  text-decoration: underline;
+}
+
+.app-footer__text strong {
+  color: var(--color-text-primary);
+  font-weight: 600;
 }

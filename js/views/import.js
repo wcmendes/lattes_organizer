@@ -73,18 +73,21 @@ export function render() {
           Selecione até 20 comprovantes (PDF, JPG, PNG) para upload e associação automática.
         </p>
 
-        <div class="import-view__actions">
-          <button id="btn-import-comprovantes" class="btn btn--secondary btn--lg" type="button">
-            Importar Comprovantes
-          </button>
-          <input
-            type="file"
-            id="input-comprovantes-files"
-            accept=".pdf,.jpg,.jpeg,.png"
-            multiple
-            class="hidden"
-            aria-hidden="true"
-          />
+        <div class="import-view__dropzone" id="comprovantes-dropzone">
+          <div class="import-view__actions">
+            <button id="btn-import-comprovantes" class="btn btn--secondary btn--lg" type="button">
+              Importar Comprovantes
+            </button>
+            <input
+              type="file"
+              id="input-comprovantes-files"
+              accept=".pdf,.jpg,.jpeg,.png"
+              multiple
+              class="hidden"
+              aria-hidden="true"
+            />
+          </div>
+          <p class="text-muted mt-sm">ou arraste os arquivos aqui</p>
         </div>
 
         <div class="import-view__info">
@@ -137,6 +140,41 @@ export function mount() {
       const files = comprovantesInput.files;
       if (!files || files.length === 0) return;
       await handleComprovantesUpload(files);
+    });
+  }
+
+  // Drag-and-drop for comprovantes
+  const dropzone = document.getElementById('comprovantes-dropzone');
+  if (dropzone) {
+    let dragCounter = 0;
+
+    dropzone.addEventListener('dragenter', (e) => {
+      e.preventDefault();
+      dragCounter++;
+      dropzone.classList.add('import-view__dropzone--active');
+    });
+
+    dropzone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+    });
+
+    dropzone.addEventListener('dragleave', (e) => {
+      e.preventDefault();
+      dragCounter--;
+      if (dragCounter <= 0) {
+        dragCounter = 0;
+        dropzone.classList.remove('import-view__dropzone--active');
+      }
+    });
+
+    dropzone.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      dragCounter = 0;
+      dropzone.classList.remove('import-view__dropzone--active');
+      const files = e.dataTransfer.files;
+      if (files && files.length > 0) {
+        await handleComprovantesUpload(files);
+      }
     });
   }
 }

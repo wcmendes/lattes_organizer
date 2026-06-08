@@ -11,7 +11,7 @@
 import { loadEntries } from '../core/entry-manager.js';
 import { loadCategories } from '../core/category-manager.js';
 import { categorySlug } from '../core/xml-parser.js';
-import { listFiles, moveFile, renameFile, findFolder, createFolder, downloadFile, deleteFile } from '../services/drive.js';
+import { listFiles, moveFile, renameFile, findFolder, createFolder, downloadFile, deleteFile, uploadFile } from '../services/drive.js';
 import { updateRow, deleteRow } from '../services/sheets.js';
 import { showSuccess, showError } from '../ui/toast.js';
 import { loadConfig } from '../config.js';
@@ -646,9 +646,45 @@ async function renderUnmappedDetail(container, entry) {
     <div class="entries-detail__unmapped">
       <h3 class="entries-detail__title">${escapeHtml(entry.titulo || '')}</h3>
       <p class="text-muted mb-md">Selecione um arquivo para vincular a esta entrada.</p>
+      <p class="entries-detail__drop-hint text-muted mb-md">Arraste um arquivo aqui para vincular</p>
       <div class="entries-detail__files-loading">Carregando arquivos disponíveis...</div>
     </div>
   `;
+
+  // Attach drag-and-drop to the unmapped container
+  const unmappedEl = container.querySelector('.entries-detail__unmapped');
+  if (unmappedEl) {
+    let dragCounter = 0;
+
+    unmappedEl.addEventListener('dragenter', (e) => {
+      e.preventDefault();
+      dragCounter++;
+      unmappedEl.classList.add('entries-detail__dropzone--active');
+    });
+
+    unmappedEl.addEventListener('dragover', (e) => {
+      e.preventDefault();
+    });
+
+    unmappedEl.addEventListener('dragleave', (e) => {
+      e.preventDefault();
+      dragCounter--;
+      if (dragCounter <= 0) {
+        dragCounter = 0;
+        unmappedEl.classList.remove('entries-detail__dropzone--active');
+      }
+    });
+
+    unmappedEl.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      dragCounter = 0;
+      unmappedEl.classList.remove('entries-detail__dropzone--active');
+      const files = e.dataTransfer.files;
+      if (files && files.length > 0) {
+        await handleDropVincular(entry, files[0]);
+      }
+    });
+  }
 
   try {
     const config = loadConfig();
@@ -817,6 +853,42 @@ async function handleVincular(entry, fileId, fileName) {
     }
   } catch (error) {
     showError(`Erro ao vincular: ${error.message}`);
+  }
+}
+
+/**
+ * Handles binding a dropped file to an entry.
+ * Flow: upload file to "files/novos/" via Drive API, then call handleVincular.
+ * @param {Object} entry
+ * @param {File} file — dropped file
+ */
+async function handleDropVincular(entry, file) {
+  const config = loadConfig();
+  if (!config.spreadsheet_id || !config.root_folder_id) {
+    showError('Configuração incompleta. Verifique Planilha e Pasta raiz.');
+    return;
+  }
+
+  try {
+    // Find or create "files/novos/" folder
+    let filesFolderId = await findFolder('files', config.root_folder_id);
+    if (!filesFolderId) {
+      showError('Pasta "files/" não encontrada no Drive.');
+      return;
+    }
+
+    let novosFolderId = await findFolder('novos', filesFolderId);
+    if (!novosFolderId) {
+      novosFolderId = await createFolder('novos', filesFolderId);
+    }
+
+    // Upload the dropped file to "files/novos/"
+    const uploadResult = await uploadFile(file, novosFolderId);
+
+    // Now call handleVincular with the uploaded file's Drive ID and name
+    await handleVincular(entry, uploadResult.id, uploadResult.name || file.name);
+  } catch (error) {
+    showError(`Erro ao fazer upload do arquivo: ${error.message}`);
   }
 }
 
