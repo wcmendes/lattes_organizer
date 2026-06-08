@@ -777,8 +777,8 @@ async function renderUnmappedDetail(container, entry) {
                target="_blank"
                rel="noopener noreferrer"
                class="btn btn--outline btn--sm" title="Abrir no Drive">📂</a>
-            <button class="btn btn--primary btn--sm btn-vincular" data-file-id="${file.id}" data-file-name="${escapeHtml(file.name)}" type="button" title="Vincular a esta entrada">🔗</button>
-            <button class="btn btn--outline btn--sm btn-excluir-file" data-file-id="${file.id}" data-file-name="${escapeHtml(file.name)}" type="button" style="color: var(--color-error); border-color: var(--color-error);" title="Excluir arquivo">🗑</button>
+            <button class="btn btn--outline btn--sm btn-vincular" data-file-id="${file.id}" data-file-name="${escapeHtml(file.name)}" type="button" title="Vincular a esta entrada">🔗</button>
+            <button class="btn btn--outline btn--sm btn-excluir-file" data-file-id="${file.id}" data-file-name="${escapeHtml(file.name)}" type="button" title="Excluir arquivo">🗑</button>
           </div>
           <div class="entries-detail__preview-container" data-preview-for="${file.id}" style="display:none;">
             ${isImage
