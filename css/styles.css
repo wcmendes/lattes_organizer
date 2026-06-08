@@ -1368,6 +1368,12 @@ textarea:focus-visible {
     grid-template-columns: 1fr 320px;
     gap: var(--spacing-lg);
     align-items: start;
+    transition: grid-template-columns var(--transition-base);
+  }
+
+  .entries-layout.entries-layout--preview-active {
+    grid-template-columns: 1fr 500px;
+  }
   }
 }
 
@@ -1504,9 +1510,8 @@ textarea:focus-visible {
   font-size: var(--font-size-sm);
   font-weight: 500;
   color: var(--color-text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  word-break: break-word;
+  line-height: 1.4;
 }
 
 .entry-item__meta {
@@ -1574,7 +1579,7 @@ textarea:focus-visible {
 
 .entries-detail__iframe {
   width: 100%;
-  height: 400px;
+  height: 500px;
   border: none;
 }
 

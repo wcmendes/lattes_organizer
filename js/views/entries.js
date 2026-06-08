@@ -442,6 +442,13 @@ async function selectEntry(entryId) {
   const detailEl = document.getElementById('entries-detail');
   if (!detailEl || !selectedEntry) return;
 
+  // Expand detail panel when entry has a file preview
+  const layoutEl = document.querySelector('.entries-layout');
+  if (layoutEl) {
+    const hasPreview = selectedEntry.status === 'mapeada' || selectedEntry.status === 'mantida_manual';
+    layoutEl.classList.toggle('entries-layout--preview-active', hasPreview);
+  }
+
   if (selectedEntry.status === 'removida') {
     renderRemovedDetail(detailEl, selectedEntry);
   } else if (selectedEntry.status === 'mapeada' || selectedEntry.status === 'mantida_manual') {
@@ -795,12 +802,14 @@ async function renderUnmappedDetail(container, entry) {
         const fileName = btn.dataset.fileName;
         const isImage = btn.dataset.isImage === 'true';
         const previewArea = container.querySelector('#entries-file-preview-area');
+        const layoutEl = document.querySelector('.entries-layout');
         if (!previewArea) return;
 
         // If clicking same file again, hide preview
         if (previewArea.dataset.currentFileId === fileId) {
           previewArea.innerHTML = '';
           previewArea.dataset.currentFileId = '';
+          if (layoutEl) layoutEl.classList.remove('entries-layout--preview-active');
           return;
         }
 
@@ -811,6 +820,7 @@ async function renderUnmappedDetail(container, entry) {
         } else {
           previewArea.innerHTML = `<iframe src="https://drive.google.com/file/d/${fileId}/preview" title="Preview ${fileName}"></iframe>`;
         }
+        if (layoutEl) layoutEl.classList.add('entries-layout--preview-active');
       });
     });
 
