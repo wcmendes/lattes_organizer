@@ -780,16 +780,11 @@ async function renderUnmappedDetail(container, entry) {
             <button class="btn btn--outline btn--sm btn-vincular" data-file-id="${file.id}" data-file-name="${escapeHtml(file.name)}" type="button" title="Vincular a esta entrada">🔗</button>
             <button class="btn btn--outline btn--sm btn-excluir-file" data-file-id="${file.id}" data-file-name="${escapeHtml(file.name)}" type="button" title="Excluir arquivo">🗑</button>
           </div>
-          <div class="entries-detail__preview-container" data-preview-for="${file.id}" style="display:none;">
-            ${isImage
-              ? `<img src="https://drive.google.com/uc?id=${file.id}" class="entries-detail__inline-preview-img" alt="${escapeHtml(file.name)}" />`
-              : `<iframe src="https://drive.google.com/file/d/${file.id}/preview" class="entries-detail__inline-preview" title="Preview ${escapeHtml(file.name)}"></iframe>`
-            }
-          </div>
         </li>
       `;
     }
     filesHtml += '</ul>';
+    filesHtml += '<div id="entries-file-preview-area" class="entries-detail__preview-area"></div>';
 
     filesContainer.outerHTML = filesHtml;
 
@@ -797,10 +792,24 @@ async function renderUnmappedDetail(container, entry) {
     container.querySelectorAll('.btn-preview-toggle').forEach(btn => {
       btn.addEventListener('click', () => {
         const fileId = btn.dataset.fileId;
-        const previewDiv = container.querySelector(`[data-preview-for="${fileId}"]`);
-        if (previewDiv) {
-          const isVisible = previewDiv.style.display !== 'none';
-          previewDiv.style.display = isVisible ? 'none' : 'block';
+        const fileName = btn.dataset.fileName;
+        const isImage = btn.dataset.isImage === 'true';
+        const previewArea = container.querySelector('#entries-file-preview-area');
+        if (!previewArea) return;
+
+        // If clicking same file again, hide preview
+        if (previewArea.dataset.currentFileId === fileId) {
+          previewArea.innerHTML = '';
+          previewArea.dataset.currentFileId = '';
+          return;
+        }
+
+        // Render preview in the shared area below the file list
+        previewArea.dataset.currentFileId = fileId;
+        if (isImage) {
+          previewArea.innerHTML = `<img src="https://drive.google.com/uc?id=${fileId}" alt="${fileName}" />`;
+        } else {
+          previewArea.innerHTML = `<iframe src="https://drive.google.com/file/d/${fileId}/preview" title="Preview ${fileName}"></iframe>`;
         }
       });
     });

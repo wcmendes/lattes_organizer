@@ -79,9 +79,16 @@ const DIACRITICS_MAP = {
   'CONSELHO': 'Conselho',
   'COMISSAO': 'Comissão',
   'CONSULTORIA': 'Consultoria',
+  'PREMIACAO': 'Premiação',
   'TITULACAO': 'Titulação',
   'CONCLUSAO': 'Conclusão',
   'CONCLUIDAS': 'Concluídas',
+  'PESQUISA': 'Pesquisa',
+  'PROJETO': 'Projeto',
+  'PROJETOS': 'Projetos',
+  'INFORMACOES': 'Informações',
+  'ADICIONAIS': 'Adicionais',
+  'JULGADORA': 'Julgadora',
 };
 
 // Maximum file size: 20MB
@@ -105,6 +112,7 @@ const TITLE_ATTRS = [
   'TITULO-DA-MONOGRAFIA',
   'TITULO-DO-CURSO',
   'TITULO',
+  'NOME-DO-PREMIO-OU-TITULO',
   'NOME-DO-PROJETO',
   'NOME-DO-EVENTO',
   'ESPECIFICACAO',
@@ -203,6 +211,8 @@ export function formatCategoryName(xmlSectionName) {
     'DADOS-COMPLEMENTARES',
     'OUTRAS-PRODUCOES',
     'OUTRA-PRODUCAO',
+    'PARTICIPACAO-EM-BANCA',
+    'PROJETO-DE',
   ];
 
   let splitIndex = -1;
@@ -738,6 +748,116 @@ export function parseXml(xmlContent) {
           processedElements.add(conselho);
         }
       }
+    }
+  } catch (e) {
+    // Silently skip
+  }
+
+  // === PASS 8: PREMIOS-TITULOS — Prêmios e títulos/certificações ===
+  try {
+    const premiosSections = curriculo.getElementsByTagName('PREMIOS-TITULOS');
+    for (let fi = 0; fi < premiosSections.length; fi++) {
+      const section = premiosSections[fi];
+      const premios = section.getElementsByTagName('PREMIO-TITULO');
+      
+      for (let pi = 0; pi < premios.length; pi++) {
+        const premio = premios[pi];
+        if (processedElements.has(premio)) continue;
+        
+        const titulo = premio.getAttribute('NOME-DO-PREMIO-OU-TITULO') || '';
+        const instituicao = premio.getAttribute('NOME-DA-ENTIDADE-PROMOTORA') || '';
+        const ano = premio.getAttribute('ANO-DA-PREMIACAO') || '';
+        
+        if (!titulo) continue;
+        
+        const categoryName = 'PREMIO-TITULO';
+        const category = ensureCategory(categoriesMap, categoryName);
+        entries.push(createEntry({ titulo, instituicao, ano, carga_horaria: '' }, category.id));
+        processedElements.add(premio);
+      }
+    }
+  } catch (e) {
+    // Silently skip
+  }
+
+  // === PASS 9: PROJETO-DE-PESQUISA — Projetos de pesquisa ===
+  try {
+    const projetos = curriculo.getElementsByTagName('PROJETO-DE-PESQUISA');
+    for (let pi = 0; pi < projetos.length; pi++) {
+      const projeto = projetos[pi];
+      if (processedElements.has(projeto)) continue;
+
+      const titulo = projeto.getAttribute('NOME-DO-PROJETO') || '';
+      const anoInicio = projeto.getAttribute('ANO-INICIO') || '';
+      const anoFim = projeto.getAttribute('ANO-FIM') || '';
+      const descricao = projeto.getAttribute('DESCRICAO-DO-PROJETO') || '';
+      const situacao = projeto.getAttribute('SITUACAO') || '';
+
+      // Use project name as title, fallback to description
+      const tituloFinal = titulo || descricao || 'Projeto de Pesquisa';
+      const ano = anoFim || anoInicio;
+
+      if (!tituloFinal || tituloFinal === 'Projeto de Pesquisa') continue;
+
+      const categoryName = 'PROJETO-DE-PESQUISA';
+      const category = ensureCategory(categoriesMap, categoryName);
+      entries.push(createEntry({ titulo: tituloFinal, instituicao: '', ano, carga_horaria: '' }, category.id));
+      processedElements.add(projeto);
+    }
+  } catch (e) {
+    // Silently skip
+  }
+
+  // === PASS 10: PARTICIPACAO-EM-BANCA-JULGADORA — Bancas julgadoras (if exists) ===
+  try {
+    const bancaJulgadora = curriculo.getElementsByTagName('PARTICIPACAO-EM-BANCA-JULGADORA');
+    for (let fi = 0; fi < bancaJulgadora.length; fi++) {
+      const section = bancaJulgadora[fi];
+      const children = section.children;
+      for (let i = 0; i < children.length; i++) {
+        const child = children[i];
+        if (processedElements.has(child)) continue;
+
+        let hasDados = false;
+        const grandchildren = child.children;
+        for (let j = 0; j < grandchildren.length; j++) {
+          if (grandchildren[j].tagName.startsWith('DADOS-BASICOS')) {
+            hasDados = true;
+            break;
+          }
+        }
+        if (hasDados) continue;
+
+        const data = extractPatternB(child);
+        if (!data.titulo && !data.instituicao) continue;
+
+        const categoryName = child.tagName;
+        const category = ensureCategory(categoriesMap, categoryName);
+        entries.push(createEntry(data, category.id));
+        processedElements.add(child);
+      }
+    }
+  } catch (e) {
+    // Silently skip
+  }
+
+  // === PASS 11: OUTRAS-INFORMACOES-RELEVANTES — Informações adicionais ===
+  try {
+    const outrasInfos = curriculo.getElementsByTagName('INFORMACOES-ADICIONAIS');
+    for (let fi = 0; fi < outrasInfos.length; fi++) {
+      const info = outrasInfos[fi];
+      if (processedElements.has(info)) continue;
+
+      const descricao = info.getAttribute('DESCRICAO-INFORMACOES-ADICIONAIS') || '';
+      if (!descricao) continue;
+
+      // Truncate long descriptions for display
+      const tituloFinal = descricao.length > 120 ? descricao.substring(0, 120) + '...' : descricao;
+
+      const categoryName = 'INFORMACOES-ADICIONAIS';
+      const category = ensureCategory(categoriesMap, categoryName);
+      entries.push(createEntry({ titulo: tituloFinal, instituicao: '', ano: '', carga_horaria: '' }, category.id));
+      processedElements.add(info);
     }
   } catch (e) {
     // Silently skip
