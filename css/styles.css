@@ -1365,8 +1365,8 @@ textarea:focus-visible {
 @media (min-width: 1024px) {
   .entries-layout {
     display: grid;
-    grid-template-columns: 1fr 400px;
-    gap: var(--spacing-xl);
+    grid-template-columns: 1fr minmax(0, 360px);
+    gap: var(--spacing-lg);
     align-items: start;
   }
 }
@@ -1530,6 +1530,8 @@ textarea:focus-visible {
   border-radius: var(--radius-md);
   padding: var(--spacing-lg);
   min-height: 200px;
+  overflow: hidden;
+  min-width: 0;
 }
 
 .entries-detail__empty {
@@ -2001,4 +2003,23 @@ textarea:focus-visible {
   display: flex;
   justify-content: flex-end;
   margin-bottom: var(--spacing-sm);
+}
+
+
+/* Inline hide button in entry list */
+.entry-item__hide-btn {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: var(--spacing-xs);
+  font-size: var(--font-size-sm);
+  opacity: 0.3;
+  transition: opacity var(--transition-fast);
+  border-radius: var(--radius-sm);
+}
+
+.entry-item__hide-btn:hover {
+  opacity: 1;
+  background-color: var(--color-surface-alt);
 }

@@ -20,6 +20,7 @@ import { findBestMatch, findBestSnippet } from '../core/matcher.js';
 import { uploadFile, moveFile, renameFile, findFolder, createFolder, listFiles } from '../services/drive.js';
 import { updateRow } from '../services/sheets.js';
 import { addToReviewQueue } from '../core/review-queue.js';
+import { computeFileHash } from '../core/hash-utils.js';
 import { showInfo } from '../ui/toast.js';
 
 /** Max files per batch upload */
@@ -380,17 +381,37 @@ async function handleComprovantesUpload(fileList) {
     const entries = await loadEntries(spreadsheetId);
     const categories = await loadCategories(spreadsheetId);
 
+    // Build hash map from existing mapped entries for SHA-256 duplicate detection
+    const existingHashes = new Map(); // hash → entry titulo
+    for (const entry of entries) {
+      if (entry.arquivo_hash) {
+        existingHashes.set(entry.arquivo_hash, entry.titulo);
+      }
+    }
+
     // Step 3+4: Process each file sequentially
     for (let i = 0; i < totalFiles; i++) {
       const file = validFiles[i];
       const fileIndex = i + 1;
 
-      // Skip duplicates: check by name + size for reliability
+      // Skip duplicates: check by name + size as fast pre-filter
       const isDuplicate = existingFiles.some(f =>
         f.name === file.name && (f.size === undefined || f.size === String(file.size))
       );
       if (isDuplicate) {
         showInfo(`Arquivo duplicado ignorado: ${file.name}`);
+        continue;
+      }
+
+      // SHA-256 hash-based duplicate detection (definitive check)
+      let fileHash = '';
+      try {
+        fileHash = await computeFileHash(file);
+      } catch (hashError) {
+        console.warn(`[Import] Could not compute hash for "${file.name}":`, hashError);
+      }
+      if (fileHash && existingHashes.has(fileHash)) {
+        showInfo(`Duplicado (já em: "${existingHashes.get(fileHash)}"). Ignorado: ${file.name}`);
         continue;
       }
 
@@ -414,8 +435,14 @@ async function handleComprovantesUpload(fileList) {
           novosFolderId,
           spreadsheetId,
           rootFolderId,
-          () => { autoMatched++; }
+          () => { autoMatched++; },
+          fileHash
         );
+
+        // Add hash to the map so subsequent files in the batch are also checked
+        if (fileHash) {
+          existingHashes.set(fileHash, file.name);
+        }
 
       } catch (error) {
         // Step 5 (per-file error): toast + continue
@@ -456,6 +483,7 @@ async function handleComprovantesUpload(fileList) {
  * @param {string} spreadsheetId — Sheets spreadsheet ID
  * @param {string} rootFolderId — Drive root folder ID
  * @param {function} onAutoMatch — callback when auto-match succeeds
+ * @param {string} fileHash — SHA-256 hash of the file
  */
 async function processAutoMatch(
   file,
@@ -466,7 +494,8 @@ async function processAutoMatch(
   novosFolderId,
   spreadsheetId,
   rootFolderId,
-  onAutoMatch
+  onAutoMatch,
+  fileHash
 ) {
   // a. Read file content from the local File object
   let fileData;
@@ -522,7 +551,8 @@ async function processAutoMatch(
         novosFolderId,
         spreadsheetId,
         rootFolderId,
-        file.name
+        file.name,
+        fileHash
       );
       onAutoMatch();
       break;
@@ -550,6 +580,7 @@ async function processAutoMatch(
  * @param {string} spreadsheetId — Sheets ID
  * @param {string} rootFolderId — Drive root folder ID
  * @param {string} originalFileName — original file name
+ * @param {string} fileHash — SHA-256 hash of the file
  */
 async function handleAutoAccept(
   uploadResult,
@@ -560,7 +591,8 @@ async function handleAutoAccept(
   novosFolderId,
   spreadsheetId,
   rootFolderId,
-  originalFileName
+  originalFileName,
+  fileHash
 ) {
   const entry = matchResult.bestMatch;
   const score = matchResult.score;
@@ -614,7 +646,8 @@ async function handleAutoAccept(
       arquivo_drive_id: uploadResult.id,
       arquivo_nome: newName,
       confianca: String(score),
-      data_mapeamento: new Date().toISOString().split('T')[0]
+      data_mapeamento: new Date().toISOString().split('T')[0],
+      arquivo_hash: fileHash || ''
     });
 
     // Update local entry state for subsequent files in the batch
@@ -623,6 +656,7 @@ async function handleAutoAccept(
     entries[entryIndex].arquivo_nome = newName;
     entries[entryIndex].confianca = score;
     entries[entryIndex].data_mapeamento = new Date().toISOString().split('T')[0];
+    entries[entryIndex].arquivo_hash = fileHash || '';
   }
 }
 

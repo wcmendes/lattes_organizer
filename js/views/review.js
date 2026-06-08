@@ -325,6 +325,7 @@ async function handleAccept() {
         arquivo_nome: newName,
         confianca: String(item.score),
         data_mapeamento: now,
+        arquivo_hash: entry.arquivo_hash || '',
       });
     }
 

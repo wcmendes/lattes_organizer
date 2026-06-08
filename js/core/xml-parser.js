@@ -677,11 +677,22 @@ export function parseXml(xmlContent) {
     // Silently skip
   }
 
-  if (entries.length === 0) {
+  // Deduplicate entries by titulo + ano + instituicao + categoria
+  const seen = new Set();
+  const deduplicatedEntries = [];
+  for (const entry of entries) {
+    const key = `${(entry.titulo || '').toLowerCase().trim()}|${entry.ano || ''}|${(entry.instituicao || '').toLowerCase().trim()}|${entry.categoria}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      deduplicatedEntries.push(entry);
+    }
+  }
+
+  if (deduplicatedEntries.length === 0) {
     errors.push('Nenhuma entrada acadêmica encontrada no XML.');
   }
 
   const categories = Array.from(categoriesMap.values());
 
-  return { entries, categories, errors };
+  return { entries: deduplicatedEntries, categories, errors };
 }

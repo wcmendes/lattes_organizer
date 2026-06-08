@@ -25,7 +25,7 @@ const CATEGORIES_SHEET = 'categorias';
 const ENTRY_COLUMNS = [
   'id', 'titulo', 'instituicao', 'ano', 'carga_horaria',
   'categoria', 'status', 'oculta', 'arquivo_drive_id',
-  'arquivo_nome', 'confianca', 'data_mapeamento'
+  'arquivo_nome', 'confianca', 'data_mapeamento', 'arquivo_hash'
 ];
 
 /**
@@ -133,6 +133,7 @@ export function mergeEntries(existingEntries, newEntries) {
         arquivo_nome: existing.arquivo_nome,
         confianca: existing.confianca,
         data_mapeamento: existing.data_mapeamento,
+        arquivo_hash: existing.arquivo_hash,
         // Preserva status se mapeada/mantida_manual, senão mantém status atual
         status: _preserveStatus(existing.status),
       });
@@ -201,6 +202,7 @@ export async function loadEntries(spreadsheetId) {
     arquivo_nome: row.arquivo_nome || null,
     confianca: row.confianca !== '' && row.confianca !== undefined ? Number(row.confianca) : null,
     data_mapeamento: row.data_mapeamento || null,
+    arquivo_hash: row.arquivo_hash || '',
   }));
 }
 
@@ -356,6 +358,7 @@ function _serializeEntry(entry) {
     entry.arquivo_nome || '',
     entry.confianca !== null && entry.confianca !== undefined ? String(entry.confianca) : '',
     entry.data_mapeamento || '',
+    entry.arquivo_hash || '',
   ];
 }
 
@@ -393,7 +396,7 @@ async function _saveEntriesToSheet(entries, spreadsheetId) {
   const rows = entries.map(e => _serializeEntry(e));
 
   // Usa batchUpdate para escrever todas as linhas a partir da linha 2 (header é linha 1)
-  const range = `${ENTRIES_SHEET}!A2:L${rows.length + 1}`;
+  const range = `${ENTRIES_SHEET}!A2:M${rows.length + 1}`;
   await batchUpdate(spreadsheetId, [
     { range, values: rows }
   ]);

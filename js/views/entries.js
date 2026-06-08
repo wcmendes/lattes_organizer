@@ -15,6 +15,7 @@ import { listFiles, moveFile, renameFile, findFolder, createFolder, downloadFile
 import { updateRow, deleteRow } from '../services/sheets.js';
 import { showSuccess, showError, showInfo } from '../ui/toast.js';
 import { loadConfig } from '../config.js';
+import { computeFileHash } from '../core/hash-utils.js';
 
 /** @type {Array<Object>} All entries loaded from sheet */
 let allEntries = [];
@@ -270,8 +271,10 @@ function renderEntries() {
     return;
   }
 
-  // Group by category
+  // Group by category — preserve original order from spreadsheet (which mirrors XML order)
   const groups = new Map();
+  const categoryOrder = allCategories.filter(c => c.ativa).map(c => c.id);
+  
   for (const entry of filtered) {
     if (!groups.has(entry.categoria)) {
       groups.set(entry.categoria, []);
@@ -279,9 +282,16 @@ function renderEntries() {
     groups.get(entry.categoria).push(entry);
   }
 
+  // Sort groups by the original category order
+  const sortedGroups = [...groups.entries()].sort((a, b) => {
+    const idxA = categoryOrder.indexOf(a[0]);
+    const idxB = categoryOrder.indexOf(b[0]);
+    return (idxA === -1 ? 999 : idxA) - (idxB === -1 ? 999 : idxB);
+  });
+
   // Build HTML
   let html = '';
-  for (const [categoryId, entries] of groups) {
+  for (const [categoryId, entries] of sortedGroups) {
     const category = allCategories.find(c => c.id === categoryId);
     const categoryName = category ? (category.nome_display || category.nome_xml) : 'Sem Categoria';
 
@@ -303,13 +313,26 @@ function renderEntries() {
 
   // Attach entry click listeners
   listEl.querySelectorAll('.entry-item').forEach(el => {
-    el.addEventListener('click', () => {
+    el.addEventListener('click', (e) => {
+      // Don't trigger selection if clicking the hide button
+      if (e.target.closest('.entry-item__hide-btn')) return;
+
       const entryId = el.dataset.entryId;
       selectEntry(entryId);
 
       // Update active state
       listEl.querySelectorAll('.entry-item').forEach(e => e.classList.remove('entry-item--active'));
       el.classList.add('entry-item--active');
+    });
+  });
+
+  // Attach inline hide buttons
+  listEl.querySelectorAll('.entry-item__hide-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const entryId = btn.dataset.hideEntryId;
+      const entry = allEntries.find(en => en.id === entryId);
+      if (entry) handleOcultarEntry(entry);
     });
   });
 
@@ -350,6 +373,7 @@ function renderEntryItem(entry) {
         </span>
         ${arquivo ? `<span class="entry-item__file">${arquivo}</span>` : ''}
       </div>
+      <button class="entry-item__hide-btn" data-hide-entry-id="${entry.id}" type="button" title="Ocultar entrada" aria-label="Ocultar">👁</button>
     </div>
   `;
 }
@@ -623,7 +647,8 @@ async function handleManterRemovida(entry) {
       arquivo_drive_id: updatedEntry.arquivo_drive_id || '',
       arquivo_nome: updatedEntry.arquivo_nome || '',
       confianca: updatedEntry.confianca !== null ? String(updatedEntry.confianca) : '',
-      data_mapeamento: updatedEntry.data_mapeamento || ''
+      data_mapeamento: updatedEntry.data_mapeamento || '',
+      arquivo_hash: updatedEntry.arquivo_hash || ''
     });
 
     // Update local state
@@ -880,7 +905,8 @@ async function handleOcultarEntry(entry) {
       arquivo_drive_id: updatedEntry.arquivo_drive_id || '',
       arquivo_nome: updatedEntry.arquivo_nome || '',
       confianca: updatedEntry.confianca !== null ? String(updatedEntry.confianca) : '',
-      data_mapeamento: updatedEntry.data_mapeamento || ''
+      data_mapeamento: updatedEntry.data_mapeamento || '',
+      arquivo_hash: updatedEntry.arquivo_hash || ''
     });
 
     allEntries[entryIndex] = updatedEntry;
@@ -987,7 +1013,8 @@ async function handleVincular(entry, fileId, fileName) {
       arquivo_drive_id: updatedEntry.arquivo_drive_id || '',
       arquivo_nome: updatedEntry.arquivo_nome || '',
       confianca: updatedEntry.confianca !== null ? String(updatedEntry.confianca) : '',
-      data_mapeamento: updatedEntry.data_mapeamento || ''
+      data_mapeamento: updatedEntry.data_mapeamento || '',
+      arquivo_hash: updatedEntry.arquivo_hash || ''
     });
 
     // Update local state
@@ -1021,6 +1048,14 @@ async function handleDropVincular(entry, file) {
   }
 
   try {
+    // Compute SHA-256 hash from local file before uploading
+    let fileHash = '';
+    try {
+      fileHash = await computeFileHash(file);
+    } catch (hashError) {
+      console.warn(`[Entries] Could not compute hash for "${file.name}":`, hashError);
+    }
+
     // Find or create "files/novos/" folder
     let filesFolderId = await findFolder('files', config.root_folder_id);
     if (!filesFolderId) {
@@ -1037,9 +1072,114 @@ async function handleDropVincular(entry, file) {
     const uploadResult = await uploadFile(file, novosFolderId);
 
     // Now call handleVincular with the uploaded file's Drive ID and name
-    await handleVincular(entry, uploadResult.id, uploadResult.name || file.name);
+    // Pass the hash so it's saved with the entry
+    await handleVincularWithHash(entry, uploadResult.id, uploadResult.name || file.name, fileHash);
   } catch (error) {
     showError(`Erro ao fazer upload do arquivo: ${error.message}`);
+  }
+}
+
+/**
+ * Handles binding a file to an entry with a pre-computed hash.
+ * Same as handleVincular but saves the hash in the entry row.
+ * @param {Object} entry
+ * @param {string} fileId
+ * @param {string} fileName
+ * @param {string} fileHash — SHA-256 hash of the file
+ */
+async function handleVincularWithHash(entry, fileId, fileName, fileHash) {
+  const config = loadConfig();
+  if (!config.spreadsheet_id || !config.root_folder_id) {
+    showError('Configuração incompleta. Verifique Planilha e Pasta raiz.');
+    return;
+  }
+
+  try {
+    // Find category info
+    const category = allCategories.find(c => c.id === entry.categoria);
+    if (!category) {
+      showError('Categoria não encontrada para esta entrada.');
+      return;
+    }
+
+    // Ensure category folder exists
+    const filesFolderId = await findFolder('files', config.root_folder_id);
+    if (!filesFolderId) {
+      showError('Pasta "files/" não encontrada no Drive.');
+      return;
+    }
+
+    const novosFolderId = await findFolder('novos', filesFolderId);
+    if (!novosFolderId) {
+      showError('Pasta "files/novos/" não encontrada no Drive.');
+      return;
+    }
+
+    const slug = categorySlug(category.nome_xml);
+    let categoryFolderId = await findFolder(slug, filesFolderId);
+    if (!categoryFolderId) {
+      categoryFolderId = await createFolder(slug, filesFolderId);
+    }
+
+    // Generate new file name
+    const ext = getFileExtension(fileName);
+    const newName = buildFileName(entry, slug, ext);
+
+    // Move file to category folder
+    await moveFile(fileId, novosFolderId, categoryFolderId);
+
+    // Rename file
+    await renameFile(fileId, newName);
+
+    // Update entry in sheet
+    const entryIndex = allEntries.findIndex(e => e.id === entry.id);
+    if (entryIndex === -1) {
+      showError('Entrada não encontrada no estado local.');
+      return;
+    }
+
+    const updatedEntry = {
+      ...entry,
+      status: 'mapeada',
+      arquivo_drive_id: fileId,
+      arquivo_nome: newName,
+      confianca: 100,
+      data_mapeamento: new Date().toISOString().slice(0, 10),
+      arquivo_hash: fileHash || ''
+    };
+
+    // Persist to sheets (rowIndex is 1-based, header=1)
+    const rowIndex = entryIndex + 2;
+    await updateRow(config.spreadsheet_id, 'entradas', rowIndex, {
+      id: updatedEntry.id,
+      titulo: updatedEntry.titulo,
+      instituicao: updatedEntry.instituicao,
+      ano: updatedEntry.ano,
+      carga_horaria: updatedEntry.carga_horaria,
+      categoria: updatedEntry.categoria,
+      status: updatedEntry.status,
+      oculta: updatedEntry.oculta === true ? 'TRUE' : 'FALSE',
+      arquivo_drive_id: updatedEntry.arquivo_drive_id || '',
+      arquivo_nome: updatedEntry.arquivo_nome || '',
+      confianca: updatedEntry.confianca !== null ? String(updatedEntry.confianca) : '',
+      data_mapeamento: updatedEntry.data_mapeamento || '',
+      arquivo_hash: updatedEntry.arquivo_hash || ''
+    });
+
+    // Update local state
+    allEntries[entryIndex] = updatedEntry;
+    selectedEntry = updatedEntry;
+
+    showSuccess(`Comprovante vinculado: ${newName}`);
+
+    // Re-render
+    renderEntries();
+    const detailEl = document.getElementById('entries-detail');
+    if (detailEl) {
+      renderMappedDetail(detailEl, updatedEntry);
+    }
+  } catch (error) {
+    showError(`Erro ao vincular: ${error.message}`);
   }
 }
 
@@ -1125,7 +1265,8 @@ async function handleDesvincular(entry) {
       arquivo_drive_id: '',
       arquivo_nome: '',
       confianca: '',
-      data_mapeamento: ''
+      data_mapeamento: '',
+      arquivo_hash: ''
     });
 
     // Update local state
