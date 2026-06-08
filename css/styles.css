@@ -1365,14 +1365,14 @@ textarea:focus-visible {
 @media (min-width: 1024px) {
   .entries-layout {
     display: grid;
-    grid-template-columns: 1fr 320px;
+    grid-template-columns: minmax(0, 1fr) 320px;
     gap: var(--spacing-lg);
     align-items: start;
     transition: grid-template-columns var(--transition-base);
   }
 
   .entries-layout.entries-layout--preview-active {
-    grid-template-columns: 1fr 500px;
+    grid-template-columns: minmax(0, 300px) 1fr;
   }
   }
 }
