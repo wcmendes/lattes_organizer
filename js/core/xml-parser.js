@@ -76,6 +76,9 @@ const DIACRITICS_MAP = {
   'OUTROS': 'Outros',
   'ATIVIDADES': 'Atividades',
   'ATUACAO': 'Atuação',
+  'CONSELHO': 'Conselho',
+  'COMISSAO': 'Comissão',
+  'CONSULTORIA': 'Consultoria',
   'TITULACAO': 'Titulação',
   'CONCLUSAO': 'Conclusão',
   'CONCLUIDAS': 'Concluídas',
@@ -671,6 +674,69 @@ export function parseXml(xmlContent) {
         const category = ensureCategory(categoriesMap, categoryName);
         entries.push(createEntry(data, category.id));
         processedElements.add(child);
+      }
+    }
+  } catch (e) {
+    // Silently skip
+  }
+
+  // === PASS 7: ATUACOES-PROFISSIONAIS — Vínculos de trabalho ===
+  try {
+    const atuacoesSections = curriculo.getElementsByTagName('ATUACOES-PROFISSIONAIS');
+    for (let fi = 0; fi < atuacoesSections.length; fi++) {
+      const section = atuacoesSections[fi];
+      const atuacoes = section.getElementsByTagName('ATUACAO-PROFISSIONAL');
+      
+      for (let ai = 0; ai < atuacoes.length; ai++) {
+        const atuacao = atuacoes[ai];
+        const nomeInstituicao = atuacao.getAttribute('NOME-INSTITUICAO') || '';
+        
+        // Each ATUACAO-PROFISSIONAL can have multiple VINCULOS
+        const vinculos = atuacao.getElementsByTagName('VINCULOS');
+        for (let vi = 0; vi < vinculos.length; vi++) {
+          const vinculo = vinculos[vi];
+          if (processedElements.has(vinculo)) continue;
+          
+          const cargo = vinculo.getAttribute('OUTRO-ENQUADRAMENTO-FUNCIONAL-INFORMADO') || 
+                        vinculo.getAttribute('ENQUADRAMENTO-FUNCIONAL') || '';
+          const anoInicio = vinculo.getAttribute('ANO-INICIO') || '';
+          const anoFim = vinculo.getAttribute('ANO-FIM') || '';
+          const cargaHoraria = vinculo.getAttribute('CARGA-HORARIA-SEMANAL') || '';
+          
+          // Build title from cargo + institution
+          const titulo = cargo ? `${cargo} — ${nomeInstituicao}` : nomeInstituicao;
+          const ano = anoFim || anoInicio; // Use end year if available, else start
+          
+          if (!titulo || titulo === ' — ') continue; // Skip empty entries
+          
+          const categoryName = 'ATUACAO-PROFISSIONAL';
+          const category = ensureCategory(categoriesMap, categoryName);
+          entries.push(createEntry({ titulo, instituicao: nomeInstituicao, ano, carga_horaria: cargaHoraria }, category.id));
+          processedElements.add(vinculo);
+        }
+        
+        // Also extract ATIVIDADES-DE-CONSELHO-COMISSAO-E-CONSULTORIA if present
+        const conselhos = atuacao.getElementsByTagName('CONSELHO-COMISSAO-E-CONSULTORIA');
+        for (let ci = 0; ci < conselhos.length; ci++) {
+          const conselho = conselhos[ci];
+          if (processedElements.has(conselho)) continue;
+          
+          const especificacao = conselho.getAttribute('ESPECIFICACAO') || '';
+          const anoInicioC = conselho.getAttribute('ANO-INICIO') || '';
+          const anoFimC = conselho.getAttribute('ANO-FIM') || '';
+          
+          if (!especificacao) continue;
+          
+          const categoryName = 'CONSELHO-COMISSAO-E-CONSULTORIA';
+          const category = ensureCategory(categoriesMap, categoryName);
+          entries.push(createEntry({ 
+            titulo: especificacao, 
+            instituicao: nomeInstituicao, 
+            ano: anoFimC || anoInicioC, 
+            carga_horaria: '' 
+          }, category.id));
+          processedElements.add(conselho);
+        }
       }
     }
   } catch (e) {
