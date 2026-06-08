@@ -17,6 +17,9 @@ let tokenClient = null;
 /** @type {{ resolve: function, reject: function }|null} */
 let pendingAuth = null;
 
+/** @type {function|null} callback when user info becomes available */
+let _onUserInfoReady = null;
+
 /**
  * Initializes the Google Identity Services token client.
  * Must be called once before signIn() is available.
@@ -164,6 +167,23 @@ export function getUserName() {
   return tokenData ? (tokenData.user_name || null) : null;
 }
 
+/**
+ * Returns the user's profile photo URL or null.
+ * @returns {string|null}
+ */
+export function getUserPhoto() {
+  const tokenData = getStoredTokenData();
+  return tokenData ? (tokenData.user_photo || null) : null;
+}
+
+/**
+ * Registers a callback to be invoked when user info (name/photo) becomes available.
+ * @param {function} callback
+ */
+export function onUserInfoReady(callback) {
+  _onUserInfoReady = callback;
+}
+
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
@@ -190,10 +210,13 @@ function handleTokenResponse(response) {
   storeToken(tokenData);
 
   // Fetch user info for display name (best-effort, non-blocking for redirect)
-  fetchUserInfo(response.access_token).then((name) => {
-    if (name) {
-      tokenData.user_name = name;
+  fetchUserInfo(response.access_token).then((info) => {
+    if (info) {
+      tokenData.user_name = info.name || info.email || null;
+      tokenData.user_photo = info.picture || null;
       storeToken(tokenData);
+      // Notify listeners that user info is available
+      if (_onUserInfoReady) _onUserInfoReady();
     }
   }).catch(() => { /* ignore — display name is optional */ });
 
@@ -222,9 +245,9 @@ function handleTokenError(error) {
 }
 
 /**
- * Fetches the user's display name from Google's userinfo endpoint.
+ * Fetches the user's info (name, email, photo) from Google's userinfo endpoint.
  * @param {string} accessToken
- * @returns {Promise<string|null>}
+ * @returns {Promise<{name: string|null, email: string|null, picture: string|null}|null>}
  */
 async function fetchUserInfo(accessToken) {
   try {
@@ -233,7 +256,7 @@ async function fetchUserInfo(accessToken) {
     });
     if (response.ok) {
       const data = await response.json();
-      return data.name || data.email || null;
+      return { name: data.name || null, email: data.email || null, picture: data.picture || null };
     }
   } catch (e) {
     // Non-critical — ignore

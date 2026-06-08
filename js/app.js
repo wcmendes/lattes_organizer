@@ -13,7 +13,7 @@
  * @module app
  */
 
-import { isAuthenticated, signOut, getUserName, initAuth } from './auth.js';
+import { isAuthenticated, signOut, getUserName, getUserPhoto, onUserInfoReady, initAuth } from './auth.js';
 import { loadConfig } from './config.js';
 import { initDriveFolders } from './core/drive-init.js';
 import {
@@ -90,15 +90,17 @@ function verifyCDNLibraries() {
  */
 function renderNavBar(activeRoute) {
   const userName = getUserName();
+  const userPhoto = getUserPhoto();
 
   const linksHtml = NAV_LINKS.map(({ path, label }) => {
     const activeClass = path === activeRoute ? ' nav__link--active' : '';
     return `<li><a href="#${path}" class="nav__link${activeClass}">${label}</a></li>`;
   }).join('\n        ');
 
-  const userHtml = userName
-    ? `<span class="nav__username">${escapeHtml(userName)}</span>`
+  const photoHtml = userPhoto
+    ? `<img src="${userPhoto}" alt="" class="nav__avatar" referrerpolicy="no-referrer" />`
     : '';
+  const nameHtml = userName ? escapeHtml(userName) : '';
 
   return `
     <nav class="nav" aria-label="Navegação principal">
@@ -107,7 +109,8 @@ function renderNavBar(activeRoute) {
         ${linksHtml}
       </ul>
       <div class="nav__user">
-        ${userHtml}
+        ${photoHtml}
+        ${nameHtml ? `<span class="nav__username">${nameHtml}</span>` : ''}
         <button class="btn btn--outline btn--sm" id="btn-signout" type="button">Sair</button>
       </div>
     </nav>
@@ -265,6 +268,14 @@ function initApp() {
   if (!config.client_id) {
     window.location.hash = '#config';
   }
+
+  // 6c. Re-render nav when user info arrives (name + photo from Google)
+  onUserInfoReady(() => {
+    const currentHash = window.location.hash.slice(1) || 'dashboard';
+    if (currentHash !== 'login') {
+      updateNavBar(currentHash);
+    }
+  });
 
   // 7. Initialize Drive folder structure if authenticated (Req 14.1)
   // Non-blocking: failures are logged but don't break the app

@@ -199,8 +199,8 @@ textarea:focus-visible {
   display: flex;
   gap: var(--spacing-sm);
   list-style: none;
-  overflow-x: auto;
   flex: 1;
+  flex-wrap: wrap;
 }
 
 .nav__link {
@@ -234,6 +234,13 @@ textarea:focus-visible {
 .nav__username {
   font-size: var(--font-size-sm);
   color: rgba(255, 255, 255, 0.9);
+}
+
+.nav__avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.5);
 }
 
 /* Botão "Sair" na nav — branco sobre fundo escuro */
@@ -873,8 +880,24 @@ textarea:focus-visible {
 
 /* Garantir que não há scroll horizontal em viewports menores */
 @media (max-width: 767px) {
+  .nav {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: var(--nav-height);
+    padding-bottom: var(--spacing-xs);
+  }
+
   .nav__links {
-    display: none;
+    order: 3;
+    width: 100%;
+    flex-wrap: wrap;
+    gap: var(--spacing-xs);
+    padding-top: var(--spacing-xs);
+  }
+
+  .nav__link {
+    font-size: var(--font-size-sm);
+    padding: var(--spacing-xs) var(--spacing-sm);
   }
 
   .nav__brand {
