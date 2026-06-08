@@ -4,6 +4,10 @@
  * Parseia o XML do Currículo Lattes (CNPq) e extrai entradas acadêmicas,
  * categorias e metadados. Trata codificação ISO-8859-1 e valida arquivos.
  * 
+ * Handles two XML patterns:
+ *   Pattern A: Elements with DADOS-BASICOS-* + DETALHAMENTO-* children
+ *   Pattern B: Elements with attributes directly (GRADUACAO, MESTRADO, etc.)
+ * 
  * Requirements: 2.2, 2.3, 2.4, 2.5, 2.10
  */
 
@@ -18,6 +22,7 @@ const DIACRITICS_MAP = {
   'EDUCACAO': 'Educação',
   'ORGANIZACAO': 'Organização',
   'ORIENTACAO': 'Orientação',
+  'ORIENTACOES': 'Orientações',
   'APRESENTACAO': 'Apresentação',
   'PUBLICACAO': 'Publicação',
   'AVALIACAO': 'Avaliação',
@@ -71,10 +76,60 @@ const DIACRITICS_MAP = {
   'OUTROS': 'Outros',
   'ATIVIDADES': 'Atividades',
   'ATUACAO': 'Atuação',
+  'TITULACAO': 'Titulação',
+  'CONCLUSAO': 'Conclusão',
+  'CONCLUIDAS': 'Concluídas',
 };
 
 // Maximum file size: 20MB
 const MAX_FILE_SIZE = 20 * 1024 * 1024;
+
+// Sections to skip (metadata only, no entries)
+const SKIP_SECTIONS = new Set([
+  'DADOS-GERAIS',
+]);
+
+// Pattern B: tags that carry attributes directly (no DADOS-BASICOS-* children)
+// These are children of known parent sections.
+const PATTERN_B_PARENTS = new Set([
+  'FORMACAO-ACADEMICA-TITULACAO',
+]);
+
+// Title attribute names to look for in Pattern B elements (priority order)
+const TITLE_ATTRS = [
+  'TITULO-DO-TRABALHO-DE-CONCLUSAO-DE-CURSO',
+  'TITULO-DA-DISSERTACAO-TESE',
+  'TITULO-DA-MONOGRAFIA',
+  'TITULO-DO-CURSO',
+  'TITULO',
+  'NOME-DO-PROJETO',
+  'NOME-DO-EVENTO',
+  'ESPECIFICACAO',
+  'DESCRICAO-DO-PROJETO',
+  'OUTRAS-INFORMACOES',
+  'NOME-CURSO',
+];
+
+// Institution attribute names for Pattern B (priority order)
+const INSTITUTION_ATTRS = [
+  'NOME-INSTITUICAO',
+  'NOME-DA-INSTITUICAO',
+  'NOME-INSTITUICAO-EMPRESA',
+];
+
+// Year attribute names for Pattern B (priority order: conclusion first, then start)
+const YEAR_ATTRS = [
+  'ANO-DE-CONCLUSAO',
+  'ANO-DE-OBTENCAO-DO-TITULO',
+  'ANO',
+  'ANO-DE-INICIO',
+];
+
+// Hours attribute names for Pattern B
+const HOURS_ATTRS = [
+  'CARGA-HORARIA',
+  'CARGA-HORARIA-SEMANAL',
+];
 
 /**
  * Generates a simple UUID v4.
@@ -135,17 +190,16 @@ export function formatCategoryName(xmlSectionName) {
   const words = xmlSectionName.split('-');
 
   // Find the split point for " — " separator.
-  // The first group is the "parent" section and the rest is the "subsection".
-  // We identify the parent by looking for common parent section patterns.
-  // Common parents: FORMACAO-COMPLEMENTAR, PARTICIPACAO-EM-EVENTOS-CONGRESSOS, PRODUCAO-BIBLIOGRAFICA, etc.
   const parentPatterns = [
     'FORMACAO-COMPLEMENTAR',
+    'FORMACAO-ACADEMICA',
     'PARTICIPACAO-EM-EVENTOS-CONGRESSOS',
     'PRODUCAO-BIBLIOGRAFICA',
     'PRODUCAO-TECNICA',
     'ORIENTACOES-CONCLUIDAS',
     'DADOS-COMPLEMENTARES',
     'OUTRAS-PRODUCOES',
+    'OUTRA-PRODUCAO',
   ];
 
   let splitIndex = -1;
@@ -193,61 +247,182 @@ export function categorySlug(xmlSectionName) {
 }
 
 /**
- * Extracts the category name from an activity element.
- * In Lattes XML, the activity element's tag name IS the category.
+ * Gets the first non-null, non-empty attribute value from a list of attribute names.
+ * @param {Element} element
+ * @param {string[]} attrNames
+ * @returns {string}
+ */
+function getFirstAttr(element, attrNames) {
+  for (const attr of attrNames) {
+    const val = element.getAttribute(attr);
+    if (val != null && val !== '') return val;
+  }
+  return '';
+}
+
+/**
+ * Determines the category name for a Pattern A element.
+ * Uses the element's own tag name (which identifies the activity type).
  * 
  * @param {Element} element
- * @returns {string} — the tag name of the element (category)
+ * @returns {string}
  */
-function getCategoryFromElement(element) {
+function getCategoryForPatternA(element) {
   return element.tagName;
 }
 
 /**
- * Extracts entry data from an activity element.
- * Lattes XML uses attributes extensively - data lives in DADOS-BASICOS-* and DETALHAMENTO-* children.
+ * Determines the category name for a Pattern B element.
+ * Combines parent section context with the element's type.
  * 
- * @param {Element} activityElement — the activity element (e.g., FORMACAO-COMPLEMENTAR-CURSO-DE-CURTA-DURACAO)
+ * @param {Element} element
+ * @param {string} parentSection — the parent section tag name
+ * @returns {string}
+ */
+function getCategoryForPatternB(element, parentSection) {
+  // For FORMACAO-ACADEMICA-TITULACAO children, use "FORMACAO-ACADEMICA-{type}"
+  if (parentSection === 'FORMACAO-ACADEMICA-TITULACAO') {
+    return 'FORMACAO-ACADEMICA-' + element.tagName;
+  }
+  // Default: use the element's own tag
+  return element.tagName;
+}
+
+/**
+ * Extracts entry data from a Pattern A element (has DADOS-BASICOS-* + DETALHAMENTO-* children).
+ * 
+ * @param {Element} activityElement
  * @returns {{titulo: string, instituicao: string, ano: string, carga_horaria: string}}
  */
-function extractEntryData(activityElement) {
+function extractPatternA(activityElement) {
   let titulo = '';
   let ano = '';
   let instituicao = '';
   let carga_horaria = '';
 
-  // Look for DADOS-BASICOS-* child (contains TITULO and ANO)
   const children = activityElement.children;
   for (let i = 0; i < children.length; i++) {
     const child = children[i];
     const tagName = child.tagName;
 
     if (tagName.startsWith('DADOS-BASICOS')) {
+      // Try multiple title attribute patterns
       titulo = child.getAttribute('TITULO') || '';
+      if (!titulo) titulo = child.getAttribute('TITULO-DO-TRABALHO') || '';
+      if (!titulo) titulo = child.getAttribute('TITULO-DO-ARTIGO') || '';
+      if (!titulo) titulo = child.getAttribute('TITULO-DA-APRESENTACAO') || '';
+      if (!titulo) titulo = child.getAttribute('TITULO-DO-TEXTO') || '';
+      if (!titulo) titulo = child.getAttribute('TITULO-DO-LIVRO') || '';
+      if (!titulo) titulo = child.getAttribute('NATUREZA') || '';
+
+      // Year
       ano = child.getAttribute('ANO') || '';
-      // Some elements use TITULO-DO-TRABALHO or similar
-      if (!titulo) {
-        titulo = child.getAttribute('TITULO-DO-TRABALHO') || '';
-      }
-      if (!titulo) {
-        titulo = child.getAttribute('TITULO-DA-APRESENTACAO') || '';
-      }
-      if (!titulo) {
-        titulo = child.getAttribute('NATUREZA') || '';
-      }
+      if (!ano) ano = child.getAttribute('ANO-DO-TRABALHO') || '';
+      if (!ano) ano = child.getAttribute('ANO-DO-ARTIGO') || '';
+      if (!ano) ano = child.getAttribute('ANO-DO-TEXTO') || '';
     }
 
     if (tagName.startsWith('DETALHAMENTO')) {
       instituicao = child.getAttribute('NOME-INSTITUICAO') || '';
+      if (!instituicao) instituicao = child.getAttribute('NOME-DA-INSTITUICAO') || '';
+      if (!instituicao) instituicao = child.getAttribute('NOME-DO-EVENTO') || '';
+      if (!instituicao) instituicao = child.getAttribute('TITULO-DO-PERIODICO-OU-REVISTA') || '';
       carga_horaria = child.getAttribute('CARGA-HORARIA') || '';
-      // Some elements use NOME-DA-INSTITUICAO
-      if (!instituicao) {
-        instituicao = child.getAttribute('NOME-DA-INSTITUICAO') || '';
-      }
     }
   }
 
   return { titulo, instituicao, ano, carga_horaria };
+}
+
+/**
+ * Extracts entry data from a Pattern B element (attributes directly on element).
+ * 
+ * @param {Element} element
+ * @returns {{titulo: string, instituicao: string, ano: string, carga_horaria: string}}
+ */
+function extractPatternB(element) {
+  const titulo = getFirstAttr(element, TITLE_ATTRS);
+  const instituicao = getFirstAttr(element, INSTITUTION_ATTRS);
+  const ano = getFirstAttr(element, YEAR_ATTRS);
+  const carga_horaria = getFirstAttr(element, HOURS_ATTRS);
+
+  return { titulo, instituicao, ano, carga_horaria };
+}
+
+/**
+ * Checks whether an element is inside a section we should skip.
+ * 
+ * @param {Element} element
+ * @returns {boolean}
+ */
+function isInSkippedSection(element) {
+  let parent = element.parentNode;
+  while (parent) {
+    if (parent.tagName && SKIP_SECTIONS.has(parent.tagName)) {
+      return true;
+    }
+    parent = parent.parentNode;
+  }
+  return false;
+}
+
+/**
+ * Checks if an element is a direct child of a Pattern B parent section.
+ * Returns the parent section name if yes, null otherwise.
+ * 
+ * @param {Element} element
+ * @returns {string|null}
+ */
+function getPatternBParent(element) {
+  const parent = element.parentNode;
+  if (parent && parent.tagName && PATTERN_B_PARENTS.has(parent.tagName)) {
+    return parent.tagName;
+  }
+  return null;
+}
+
+/**
+ * Creates a standard entry object.
+ * 
+ * @param {{titulo: string, instituicao: string, ano: string, carga_horaria: string}} data
+ * @param {string} categoryId
+ * @returns {object}
+ */
+function createEntry(data, categoryId) {
+  return {
+    id: generateUUID(),
+    titulo: data.titulo,
+    instituicao: data.instituicao,
+    ano: data.ano,
+    carga_horaria: data.carga_horaria,
+    categoria: categoryId,
+    status: 'pendente',
+    oculta: false,
+    arquivo_drive_id: null,
+    arquivo_nome: null,
+    confianca: null,
+    data_mapeamento: null,
+  };
+}
+
+/**
+ * Registers a category in the map if not already present and returns it.
+ * 
+ * @param {Map} categoriesMap
+ * @param {string} categoryName
+ * @returns {object}
+ */
+function ensureCategory(categoriesMap, categoryName) {
+  if (!categoriesMap.has(categoryName)) {
+    categoriesMap.set(categoryName, {
+      id: generateUUID(),
+      nome_xml: categoryName,
+      nome_display: formatCategoryName(categoryName),
+      ativa: false,
+      pasta_drive_id: null,
+    });
+  }
+  return categoriesMap.get(categoryName);
 }
 
 /**
@@ -264,7 +439,7 @@ function extractEntryData(activityElement) {
 export function parseXml(xmlContent) {
   const errors = [];
   const entries = [];
-  const categoriesMap = new Map(); // nome_xml → Category
+  const categoriesMap = new Map();
 
   if (!xmlContent || typeof xmlContent !== 'string') {
     return { entries: [], categories: [], errors: ['Conteúdo XML vazio ou inválido.'] };
@@ -286,15 +461,51 @@ export function parseXml(xmlContent) {
     return { entries: [], categories: [], errors: ['Arquivo não contém a estrutura esperada do Currículo Lattes (elemento CURRICULO-VITAE não encontrado).'] };
   }
 
-  // Sections that contain activities of interest
-  // We traverse all descendants looking for activity elements that have DADOS-BASICOS-* children
+  // Track which elements were already processed (to avoid double-counting)
+  const processedElements = new Set();
+
+  // === PASS 1: Pattern B — Direct-attribute elements in known parent sections ===
+  // Process FORMACAO-ACADEMICA-TITULACAO children
+  try {
+    const formacaoTitulacao = curriculo.getElementsByTagName('FORMACAO-ACADEMICA-TITULACAO');
+    for (let fi = 0; fi < formacaoTitulacao.length; fi++) {
+      const section = formacaoTitulacao[fi];
+      const children = section.children;
+      for (let i = 0; i < children.length; i++) {
+        const child = children[i];
+        // Skip meta elements like PALAVRAS-CHAVE, AREAS-DO-CONHECIMENTO
+        if (child.tagName.startsWith('PALAVRAS') || child.tagName.startsWith('AREAS')) continue;
+
+        const data = extractPatternB(child);
+        // Use tag name as title fallback if no title found
+        if (!data.titulo) {
+          data.titulo = child.getAttribute('NOME-CURSO') || child.tagName;
+        }
+
+        const categoryName = getCategoryForPatternB(child, 'FORMACAO-ACADEMICA-TITULACAO');
+        const category = ensureCategory(categoriesMap, categoryName);
+        entries.push(createEntry(data, category.id));
+        processedElements.add(child);
+      }
+    }
+  } catch (e) {
+    // Silently skip if section not found
+  }
+
+  // === PASS 2: Pattern A — Elements with DADOS-BASICOS-* children ===
   const allElements = curriculo.getElementsByTagName('*');
 
   for (let i = 0; i < allElements.length; i++) {
     const element = allElements[i];
-    const children = element.children;
 
-    // Check if this element has DADOS-BASICOS-* child → it's an activity entry
+    // Skip if already processed in Pattern B
+    if (processedElements.has(element)) continue;
+
+    // Skip elements inside skipped sections
+    if (isInSkippedSection(element)) continue;
+
+    // Check if this element has a DADOS-BASICOS-* child → Pattern A
+    const children = element.children;
     let hasDadosBasicos = false;
     for (let j = 0; j < children.length; j++) {
       if (children[j].tagName.startsWith('DADOS-BASICOS')) {
@@ -306,37 +517,160 @@ export function parseXml(xmlContent) {
     if (!hasDadosBasicos) continue;
 
     // Extract entry data
-    const categoryName = getCategoryFromElement(element);
-    const { titulo, instituicao, ano, carga_horaria } = extractEntryData(element);
+    const categoryName = getCategoryForPatternA(element);
+    const data = extractPatternA(element);
 
-    // Register category if new
-    if (!categoriesMap.has(categoryName)) {
-      categoriesMap.set(categoryName, {
-        id: generateUUID(),
-        nome_xml: categoryName,
-        nome_display: formatCategoryName(categoryName),
-        ativa: false,
-        pasta_drive_id: null,
-      });
+    // If no title from DADOS-BASICOS-*, try element's own attributes as fallback
+    if (!data.titulo) {
+      data.titulo = getFirstAttr(element, TITLE_ATTRS) || element.tagName;
     }
 
-    const category = categoriesMap.get(categoryName);
+    const category = ensureCategory(categoriesMap, categoryName);
+    entries.push(createEntry(data, category.id));
+    processedElements.add(element);
+  }
 
-    // Create entry
-    entries.push({
-      id: generateUUID(),
-      titulo,
-      instituicao,
-      ano,
-      carga_horaria,
-      categoria: category.id,
-      status: 'pendente',
-      oculta: false,
-      arquivo_drive_id: null,
-      arquivo_nome: null,
-      confianca: null,
-      data_mapeamento: null,
-    });
+  // === PASS 3: Pattern B — FORMACAO-COMPLEMENTAR direct-attribute entries (if no DADOS-BASICOS-*) ===
+  // Some FORMACAO-COMPLEMENTAR entries might use direct attributes (older XML formats)
+  try {
+    const formacaoComplementarSections = curriculo.getElementsByTagName('FORMACAO-COMPLEMENTAR');
+    for (let fi = 0; fi < formacaoComplementarSections.length; fi++) {
+      const section = formacaoComplementarSections[fi];
+      const children = section.children;
+      for (let i = 0; i < children.length; i++) {
+        const child = children[i];
+        if (processedElements.has(child)) continue;
+
+        // Check if this child has DADOS-BASICOS-* children (already handled in Pass 2)
+        let hasDados = false;
+        const grandchildren = child.children;
+        for (let j = 0; j < grandchildren.length; j++) {
+          if (grandchildren[j].tagName.startsWith('DADOS-BASICOS')) {
+            hasDados = true;
+            break;
+          }
+        }
+        if (hasDados) continue; // Already handled
+
+        // Pattern B: attributes directly on element
+        const data = extractPatternB(child);
+        if (!data.titulo && !data.instituicao) continue; // No meaningful data
+
+        const categoryName = child.tagName;
+        const category = ensureCategory(categoriesMap, categoryName);
+        entries.push(createEntry(data, category.id));
+        processedElements.add(child);
+      }
+    }
+  } catch (e) {
+    // Silently skip
+  }
+
+  // === PASS 4: PARTICIPACAO-EM-EVENTOS-CONGRESSOS direct entries ===
+  try {
+    const eventSections = curriculo.getElementsByTagName('PARTICIPACAO-EM-EVENTOS-CONGRESSOS');
+    for (let fi = 0; fi < eventSections.length; fi++) {
+      const section = eventSections[fi];
+      const children = section.children;
+      for (let i = 0; i < children.length; i++) {
+        const child = children[i];
+        if (processedElements.has(child)) continue;
+
+        // Check if already processed via Pattern A
+        let hasDados = false;
+        const grandchildren = child.children;
+        for (let j = 0; j < grandchildren.length; j++) {
+          if (grandchildren[j].tagName.startsWith('DADOS-BASICOS')) {
+            hasDados = true;
+            break;
+          }
+        }
+        if (hasDados) continue; // Already handled in Pass 2
+
+        // Direct attributes pattern
+        const titulo = child.getAttribute('NOME-DO-EVENTO') || child.getAttribute('TITULO') || '';
+        const ano = child.getAttribute('ANO') || '';
+        const instituicao = child.getAttribute('NOME-INSTITUICAO') || '';
+        const carga_horaria = child.getAttribute('CARGA-HORARIA') || '';
+
+        if (!titulo && !ano) continue; // No meaningful data
+
+        const categoryName = child.tagName;
+        const category = ensureCategory(categoriesMap, categoryName);
+        entries.push(createEntry({ titulo, instituicao, ano, carga_horaria }, category.id));
+        processedElements.add(child);
+      }
+    }
+  } catch (e) {
+    // Silently skip
+  }
+
+  // === PASS 5: ORIENTACOES-CONCLUIDAS direct entries (if not already processed) ===
+  try {
+    const orientSections = curriculo.getElementsByTagName('ORIENTACOES-CONCLUIDAS');
+    for (let fi = 0; fi < orientSections.length; fi++) {
+      const section = orientSections[fi];
+      const children = section.children;
+      for (let i = 0; i < children.length; i++) {
+        const child = children[i];
+        if (processedElements.has(child)) continue;
+
+        // Check if already processed via Pattern A
+        let hasDados = false;
+        const grandchildren = child.children;
+        for (let j = 0; j < grandchildren.length; j++) {
+          if (grandchildren[j].tagName.startsWith('DADOS-BASICOS')) {
+            hasDados = true;
+            break;
+          }
+        }
+        if (hasDados) continue;
+
+        // Direct attributes pattern
+        const data = extractPatternB(child);
+        if (!data.titulo && !data.instituicao) continue;
+
+        const categoryName = child.tagName;
+        const category = ensureCategory(categoriesMap, categoryName);
+        entries.push(createEntry(data, category.id));
+        processedElements.add(child);
+      }
+    }
+  } catch (e) {
+    // Silently skip
+  }
+
+  // === PASS 6: PARTICIPACAO-EM-BANCA-TRABALHOS-CONCLUSAO entries ===
+  try {
+    const bancaSections = curriculo.getElementsByTagName('PARTICIPACAO-EM-BANCA-TRABALHOS-CONCLUSAO');
+    for (let fi = 0; fi < bancaSections.length; fi++) {
+      const section = bancaSections[fi];
+      const children = section.children;
+      for (let i = 0; i < children.length; i++) {
+        const child = children[i];
+        if (processedElements.has(child)) continue;
+
+        let hasDados = false;
+        const grandchildren = child.children;
+        for (let j = 0; j < grandchildren.length; j++) {
+          if (grandchildren[j].tagName.startsWith('DADOS-BASICOS')) {
+            hasDados = true;
+            break;
+          }
+        }
+        if (hasDados) continue;
+
+        const data = extractPatternB(child);
+        if (!data.titulo && !data.instituicao) continue;
+
+        const categoryName = child.tagName;
+        const category = ensureCategory(categoriesMap, categoryName);
+        entries.push(createEntry(data, category.id));
+        processedElements.add(child);
+      }
+    }
+  } catch (e) {
+    // Silently skip
   }
 
   if (entries.length === 0) {
