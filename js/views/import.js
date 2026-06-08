@@ -17,9 +17,10 @@ import { showSuccess, showError } from '../ui/toast.js';
 import { loadConfig } from '../config.js';
 import { extractText } from '../core/text-extractor.js';
 import { findBestMatch, findBestSnippet } from '../core/matcher.js';
-import { uploadFile, moveFile, renameFile, findFolder, createFolder } from '../services/drive.js';
+import { uploadFile, moveFile, renameFile, findFolder, createFolder, listFiles } from '../services/drive.js';
 import { updateRow } from '../services/sheets.js';
 import { addToReviewQueue } from '../core/review-queue.js';
+import { showInfo } from '../ui/toast.js';
 
 /** Max files per batch upload */
 const MAX_FILES = 20;
@@ -372,6 +373,9 @@ async function handleComprovantesUpload(fileList) {
     // Ensure "files/novos/" folder exists
     const novosFolderId = await ensureNovosFolder(rootFolderId);
 
+    // Check for duplicates: list existing files in novos/
+    const existingFiles = await listFiles(novosFolderId);
+
     // Load candidates (entries from Sheets)
     const entries = await loadEntries(spreadsheetId);
     const categories = await loadCategories(spreadsheetId);
@@ -380,6 +384,15 @@ async function handleComprovantesUpload(fileList) {
     for (let i = 0; i < totalFiles; i++) {
       const file = validFiles[i];
       const fileIndex = i + 1;
+
+      // Skip duplicates: check by name + size for reliability
+      const isDuplicate = existingFiles.some(f =>
+        f.name === file.name && (f.size === undefined || f.size === String(file.size))
+      );
+      if (isDuplicate) {
+        showInfo(`Arquivo duplicado ignorado: ${file.name}`);
+        continue;
+      }
 
       updateOverlay({
         message: `Processando arquivo ${fileIndex} de ${totalFiles}`,

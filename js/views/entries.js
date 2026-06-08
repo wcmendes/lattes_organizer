@@ -13,7 +13,7 @@ import { loadCategories } from '../core/category-manager.js';
 import { categorySlug } from '../core/xml-parser.js';
 import { listFiles, moveFile, renameFile, findFolder, createFolder, downloadFile, deleteFile, uploadFile } from '../services/drive.js';
 import { updateRow, deleteRow } from '../services/sheets.js';
-import { showSuccess, showError } from '../ui/toast.js';
+import { showSuccess, showError, showInfo } from '../ui/toast.js';
 import { loadConfig } from '../config.js';
 
 /** @type {Array<Object>} All entries loaded from sheet */
@@ -463,6 +463,7 @@ function renderMappedDetail(container, entry) {
       ${previewHtml}
       <div class="entries-detail__actions mt-md">
         <button class="btn btn--danger btn--sm" id="btn-desvincular" type="button">Desvincular</button>
+        <button class="btn btn--secondary btn--sm" id="btn-ocultar" type="button">👁‍🗨 Ocultar</button>
       </div>
     </div>
   `;
@@ -471,6 +472,12 @@ function renderMappedDetail(container, entry) {
   const btnDesvincular = document.getElementById('btn-desvincular');
   if (btnDesvincular) {
     btnDesvincular.addEventListener('click', () => handleDesvincular(entry));
+  }
+
+  // Ocultar listener
+  const btnOcultar = document.getElementById('btn-ocultar');
+  if (btnOcultar) {
+    btnOcultar.addEventListener('click', () => handleOcultarEntry(entry));
   }
 }
 
@@ -646,10 +653,19 @@ async function renderUnmappedDetail(container, entry) {
     <div class="entries-detail__unmapped">
       <h3 class="entries-detail__title">${escapeHtml(entry.titulo || '')}</h3>
       <p class="text-muted mb-md">Selecione um arquivo para vincular a esta entrada.</p>
+      <div class="entries-detail__actions mb-md">
+        <button class="btn btn--secondary btn--sm" id="btn-ocultar-unmapped" type="button">👁‍🗨 Ocultar</button>
+      </div>
       <p class="entries-detail__drop-hint text-muted mb-md">Arraste um arquivo aqui para vincular</p>
       <div class="entries-detail__files-loading">Carregando arquivos disponíveis...</div>
     </div>
   `;
+
+  // Ocultar listener for unmapped
+  const btnOcultarUnmapped = document.getElementById('btn-ocultar-unmapped');
+  if (btnOcultarUnmapped) {
+    btnOcultarUnmapped.addEventListener('click', () => handleOcultarEntry(entry));
+  }
 
   // Attach drag-and-drop to the unmapped container
   const unmappedEl = container.querySelector('.entries-detail__unmapped');
@@ -689,20 +705,23 @@ async function renderUnmappedDetail(container, entry) {
   try {
     const config = loadConfig();
     if (!config.root_folder_id) {
-      container.querySelector('.entries-detail__files-loading').textContent = 'Pasta raiz não configurada.';
+      const el = container.querySelector('.entries-detail__files-loading');
+      if (el) el.textContent = 'Pasta raiz não configurada.';
       return;
     }
 
     // Find novos/ folder
     const filesFolderId = await findFolder('files', config.root_folder_id);
     if (!filesFolderId) {
-      container.querySelector('.entries-detail__files-loading').textContent = 'Pasta "files/" não encontrada.';
+      const el = container.querySelector('.entries-detail__files-loading');
+      if (el) el.textContent = 'Pasta "files/" não encontrada.';
       return;
     }
 
     const novosFolderId = await findFolder('novos', filesFolderId);
     if (!novosFolderId) {
-      container.querySelector('.entries-detail__files-loading').textContent = 'Pasta "files/novos/" não encontrada.';
+      const el = container.querySelector('.entries-detail__files-loading');
+      if (el) el.textContent = 'Pasta "files/novos/" não encontrada.';
       return;
     }
 
@@ -710,22 +729,37 @@ async function renderUnmappedDetail(container, entry) {
     novosFiles.sort((a, b) => a.name.localeCompare(b.name));
 
     const filesContainer = container.querySelector('.entries-detail__files-loading');
+    if (!filesContainer) return; // Container may have changed during async operation
     if (novosFiles.length === 0) {
       filesContainer.outerHTML = '<p class="text-muted">Nenhum arquivo disponível em "files/novos/".</p>';
       return;
     }
 
-    let filesHtml = '<ul class="entries-detail__file-list">';
+    let filesHtml = `
+      <div class="entries-detail__bulk-actions">
+        <button class="btn btn--danger btn--sm" id="btn-excluir-todos-novos" type="button">🗑 Excluir todos sem match</button>
+      </div>
+    `;
+    filesHtml += '<ul class="entries-detail__file-list">';
     for (const file of novosFiles) {
+      const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(file.name);
       filesHtml += `
-        <li class="entries-detail__file-item">
+        <li class="entries-detail__file-item" data-file-id="${file.id}">
           <span class="entries-detail__file-name">${escapeHtml(file.name)}</span>
           <div class="entries-detail__file-actions">
+            <button class="btn btn--outline btn--sm btn-preview-toggle" data-file-id="${file.id}" data-file-name="${escapeHtml(file.name)}" data-is-image="${isImage}" type="button" title="Preview">👁</button>
             <a href="https://drive.google.com/file/d/${encodeURIComponent(file.id)}/view"
                target="_blank"
                rel="noopener noreferrer"
                class="btn btn--outline btn--sm">Ver</a>
             <button class="btn btn--primary btn--sm btn-vincular" data-file-id="${file.id}" data-file-name="${escapeHtml(file.name)}" type="button">Vincular</button>
+            <button class="btn btn--outline btn--sm btn-excluir-file" data-file-id="${file.id}" data-file-name="${escapeHtml(file.name)}" type="button" style="color: var(--color-danger); border-color: var(--color-danger);" title="Excluir">🗑</button>
+          </div>
+          <div class="entries-detail__preview-container" data-preview-for="${file.id}" style="display:none;">
+            ${isImage
+              ? `<img src="https://drive.google.com/uc?id=${file.id}" class="entries-detail__inline-preview-img" alt="${escapeHtml(file.name)}" />`
+              : `<iframe src="https://drive.google.com/file/d/${file.id}/preview" class="entries-detail__inline-preview" title="Preview ${escapeHtml(file.name)}"></iframe>`
+            }
           </div>
         </li>
       `;
@@ -733,6 +767,18 @@ async function renderUnmappedDetail(container, entry) {
     filesHtml += '</ul>';
 
     filesContainer.outerHTML = filesHtml;
+
+    // Attach preview toggle listeners
+    container.querySelectorAll('.btn-preview-toggle').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const fileId = btn.dataset.fileId;
+        const previewDiv = container.querySelector(`[data-preview-for="${fileId}"]`);
+        if (previewDiv) {
+          const isVisible = previewDiv.style.display !== 'none';
+          previewDiv.style.display = isVisible ? 'none' : 'block';
+        }
+      });
+    });
 
     // Attach vincular listeners
     container.querySelectorAll('.btn-vincular').forEach(btn => {
@@ -742,12 +788,117 @@ async function renderUnmappedDetail(container, entry) {
         handleVincular(entry, fileId, fileName);
       });
     });
+
+    // Attach individual delete listeners
+    container.querySelectorAll('.btn-excluir-file').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const fileId = btn.dataset.fileId;
+        const fileName = btn.dataset.fileName;
+        if (!confirm(`Excluir "${fileName}" permanentemente do Drive?`)) return;
+        try {
+          await deleteFile(fileId);
+          const li = container.querySelector(`li[data-file-id="${fileId}"]`);
+          if (li) li.remove();
+          showSuccess(`Arquivo "${fileName}" excluído.`);
+        } catch (err) {
+          showError(`Erro ao excluir "${fileName}": ${err.message}`);
+        }
+      });
+    });
+
+    // Attach bulk delete listener
+    const btnBulkDelete = container.querySelector('#btn-excluir-todos-novos');
+    if (btnBulkDelete) {
+      btnBulkDelete.addEventListener('click', async () => {
+        if (!confirm(`Excluir TODOS os ${novosFiles.length} arquivos da pasta "novos/"? Esta ação não pode ser desfeita.`)) return;
+        let deleted = 0;
+        showInfo(`Excluindo ${novosFiles.length} arquivos...`);
+        for (const f of novosFiles) {
+          try {
+            await deleteFile(f.id);
+            deleted++;
+            const li = container.querySelector(`li[data-file-id="${f.id}"]`);
+            if (li) li.remove();
+          } catch (err) {
+            showError(`Falha ao excluir "${f.name}": ${err.message}`);
+          }
+        }
+        showSuccess(`${deleted} arquivo(s) excluído(s).`);
+        // Remove the bulk button and empty list message
+        const bulkDiv = container.querySelector('.entries-detail__bulk-actions');
+        if (bulkDiv) bulkDiv.remove();
+        const fileList = container.querySelector('.entries-detail__file-list');
+        if (fileList && fileList.children.length === 0) {
+          fileList.outerHTML = '<p class="text-muted">Nenhum arquivo disponível em "files/novos/".</p>';
+        }
+      });
+    }
   } catch (error) {
     showError(`Erro ao listar arquivos: ${error.message}`);
     const filesEl = container.querySelector('.entries-detail__files-loading');
     if (filesEl) {
       filesEl.textContent = 'Erro ao carregar arquivos.';
     }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Ocultar Entry
+// ---------------------------------------------------------------------------
+
+/**
+ * Handles hiding an entry by setting oculta = true.
+ * Updates the entry in Sheets, local state, re-renders list and clears detail.
+ * @param {Object} entry
+ */
+async function handleOcultarEntry(entry) {
+  const config = loadConfig();
+  if (!config.spreadsheet_id) {
+    showError('Configuração incompleta. Verifique a Planilha nas Configurações.');
+    return;
+  }
+
+  const entryIndex = allEntries.findIndex(e => e.id === entry.id);
+  if (entryIndex === -1) {
+    showError('Entrada não encontrada no estado local.');
+    return;
+  }
+
+  try {
+    const updatedEntry = { ...entry, oculta: true };
+
+    const rowIndex = entryIndex + 2;
+    await updateRow(config.spreadsheet_id, 'entradas', rowIndex, {
+      id: updatedEntry.id,
+      titulo: updatedEntry.titulo,
+      instituicao: updatedEntry.instituicao,
+      ano: updatedEntry.ano,
+      carga_horaria: updatedEntry.carga_horaria,
+      categoria: updatedEntry.categoria,
+      status: updatedEntry.status,
+      oculta: 'TRUE',
+      arquivo_drive_id: updatedEntry.arquivo_drive_id || '',
+      arquivo_nome: updatedEntry.arquivo_nome || '',
+      confianca: updatedEntry.confianca !== null ? String(updatedEntry.confianca) : '',
+      data_mapeamento: updatedEntry.data_mapeamento || ''
+    });
+
+    allEntries[entryIndex] = updatedEntry;
+    selectedEntry = null;
+
+    showSuccess("Entrada oculta. Restaure em 'Itens Ocultos'.");
+
+    renderEntries();
+    const detailEl = document.getElementById('entries-detail');
+    if (detailEl) {
+      detailEl.innerHTML = `
+        <div class="entries-detail__empty">
+          <p class="text-muted">Selecione uma entrada para ver detalhes.</p>
+        </div>
+      `;
+    }
+  } catch (error) {
+    showError(`Erro ao ocultar entrada: ${error.message}`);
   }
 }
 

@@ -313,6 +313,9 @@ function extractPatternA(activityElement) {
       if (!titulo) titulo = child.getAttribute('TITULO-DA-APRESENTACAO') || '';
       if (!titulo) titulo = child.getAttribute('TITULO-DO-TEXTO') || '';
       if (!titulo) titulo = child.getAttribute('TITULO-DO-LIVRO') || '';
+      if (!titulo) titulo = child.getAttribute('TITULO-DO-SOFTWARE') || '';
+      if (!titulo) titulo = child.getAttribute('TITULO-DO-PRODUTO-TECNOLOGICO') || '';
+      if (!titulo) titulo = child.getAttribute('TITULO-DO-TRABALHO-TECNICO') || '';
       if (!titulo) titulo = child.getAttribute('NATUREZA') || '';
 
       // Year
@@ -327,6 +330,7 @@ function extractPatternA(activityElement) {
       if (!instituicao) instituicao = child.getAttribute('NOME-DA-INSTITUICAO') || '';
       if (!instituicao) instituicao = child.getAttribute('NOME-DO-EVENTO') || '';
       if (!instituicao) instituicao = child.getAttribute('TITULO-DO-PERIODICO-OU-REVISTA') || '';
+      if (!instituicao) instituicao = child.getAttribute('NOME-DA-PLATAFORMA') || '';
       carga_horaria = child.getAttribute('CARGA-HORARIA') || '';
     }
   }

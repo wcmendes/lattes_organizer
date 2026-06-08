@@ -16,7 +16,8 @@
 import { loadEntries } from '../core/entry-manager.js';
 import { loadCategories } from '../core/category-manager.js';
 import { loadConfig } from '../config.js';
-import { showError } from '../ui/toast.js';
+import { showError, showSuccess } from '../ui/toast.js';
+import { exportToDrive, exportToZip } from '../core/exporter.js';
 
 /**
  * Renders the dashboard view HTML (static shell).
@@ -48,6 +49,7 @@ export function render() {
  */
 export function mount() {
   _loadAndRender();
+  _attachExportListeners();
 }
 
 // ---------------------------------------------------------------------------
@@ -155,6 +157,18 @@ function _renderDashboard(entries, categories) {
     `;
   }
 
+  // Export section
+  html += `
+    <section class="dashboard-section">
+      <h2 class="dashboard-section__title">Exportação</h2>
+      <p class="text-muted mb-md">Exporte seus comprovantes organizados por categoria.</p>
+      <div style="display: flex; gap: var(--spacing-md);">
+        <button id="btn-export-drive" class="btn btn--primary" type="button">Exportar para Drive</button>
+        <button id="btn-export-zip" class="btn btn--outline" type="button">Baixar ZIP</button>
+      </div>
+    </section>
+  `;
+
   return html;
 }
 
@@ -172,6 +186,76 @@ function _renderEmptyState() {
       <a href="#importacao" class="btn btn--primary">Importar XML</a>
     </div>
   `;
+}
+
+// ---------------------------------------------------------------------------
+// Internal: Export Listeners
+// ---------------------------------------------------------------------------
+
+/**
+ * Attaches click handlers for export buttons.
+ * Uses MutationObserver to wait for buttons to appear after async render.
+ * @private
+ */
+function _attachExportListeners() {
+  // Use a short polling approach since dashboard-content is async-rendered
+  const observer = new MutationObserver(() => {
+    const btnDrive = document.getElementById('btn-export-drive');
+    const btnZip = document.getElementById('btn-export-zip');
+
+    if (btnDrive && btnZip) {
+      observer.disconnect();
+
+      btnDrive.addEventListener('click', async () => {
+        try {
+          const config = loadConfig();
+          if (!config.spreadsheet_id || !config.root_folder_id) {
+            showError('Configuração incompleta. Verifique Planilha e Pasta raiz.');
+            return;
+          }
+          const [entries, categories] = await Promise.all([
+            loadEntries(config.spreadsheet_id),
+            loadCategories(config.spreadsheet_id)
+          ]);
+          await exportToDrive(entries, {
+            rootFolderId: config.root_folder_id,
+            categories
+          });
+        } catch (error) {
+          showError(`Erro na exportação: ${error.message}`);
+        }
+      });
+
+      btnZip.addEventListener('click', async () => {
+        try {
+          const config = loadConfig();
+          if (!config.spreadsheet_id) {
+            showError('Configuração incompleta. Verifique a Planilha.');
+            return;
+          }
+          const [entries, categories] = await Promise.all([
+            loadEntries(config.spreadsheet_id),
+            loadCategories(config.spreadsheet_id)
+          ]);
+          const blob = await exportToZip(entries, { categories });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'ComprovaLattes.zip';
+          a.click();
+          URL.revokeObjectURL(url);
+          showSuccess('Download do ZIP iniciado.');
+        } catch (error) {
+          showError(`Erro ao gerar ZIP: ${error.message}`);
+        }
+      });
+    }
+  });
+
+  const contentEl = document.getElementById('dashboard-content');
+  if (contentEl) {
+    observer.observe(contentEl, { childList: true, subtree: true });
+  }
 }
 
 // ---------------------------------------------------------------------------
