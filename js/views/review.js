@@ -23,6 +23,7 @@ import { getReviewQueue, removeFromReviewQueue } from '../core/review-queue.js';
 import { listFiles, moveFile, renameFile, findFolder, createFolder } from '../services/drive.js';
 import { updateRow } from '../services/sheets.js';
 import { loadEntries } from '../core/entry-manager.js';
+import { loadCategories } from '../core/category-manager.js';
 import { loadConfig } from '../config.js';
 import { showSuccess, showError } from '../ui/toast.js';
 import { categorySlug } from '../core/xml-parser.js';
@@ -44,6 +45,9 @@ let unmatchedFiles = [];
 
 /** @type {Array<Object>} entries without mapping (status pendente) */
 let unmappedEntries = [];
+
+/** @type {Array<Object>} all categories loaded */
+let allCategories = [];
 
 /** @type {string|null} currently selected file ID for preview */
 let selectedFileId = null;
@@ -94,13 +98,23 @@ export function mount() {
  * Opens the review overlay. Reads the current queue from localStorage.
  * If queue is empty, shows informational toast and does nothing.
  */
-export function show() {
+export async function show() {
   queue = getReviewQueue();
   currentIndex = 0;
 
   if (queue.length === 0) {
     showError('Nenhuma sugestão na fila de revisão.');
     return;
+  }
+
+  // Ensure categories are loaded for display
+  if (allCategories.length === 0) {
+    try {
+      const config = loadConfig();
+      if (config.spreadsheet_id) {
+        allCategories = await loadCategories(config.spreadsheet_id);
+      }
+    } catch (e) { /* ignore */ }
   }
 
   createOverlay();
@@ -157,6 +171,7 @@ async function loadUnmatchedFiles() {
 
     // Load entries and find unmapped ones
     const allEntries = await loadEntries(config.spreadsheet_id);
+    allCategories = await loadCategories(config.spreadsheet_id);
     unmappedEntries = allEntries.filter(e => !e.arquivo_drive_id && e.status !== 'removida');
 
     // Find "files/novos/" folder
@@ -260,9 +275,10 @@ function selectFile(fileId, fileName) {
   if (!detail) return;
 
   const previewHtml = buildFilePreview(fileId, fileName);
-  const entriesOptions = unmappedEntries.map(entry =>
-    `<option value="${escapeHtml(entry.id)}">${escapeHtml(entry.titulo || 'Sem título')} (${escapeHtml(entry.ano || '—')})</option>`
-  ).join('');
+  const datalistOptions = unmappedEntries.map(entry => {
+    const cat = getCategoryName(entry.categoria);
+    return `<option value="${escapeHtml(entry.id)}" label="${escapeHtml(entry.titulo || 'Sem título')} • ${escapeHtml(cat)} • ${escapeHtml(entry.ano || '—')}">${escapeHtml(entry.titulo || 'Sem título')} • ${escapeHtml(cat)} • ${escapeHtml(entry.ano || '—')}</option>`;
+  }).join('');
 
   detail.innerHTML = `
     <div class="review-files-detail__preview">
@@ -270,12 +286,12 @@ function selectFile(fileId, fileName) {
       ${previewHtml}
     </div>
     <div class="review-files-detail__bind">
-      <label for="review-entry-select" class="review-files-detail__label">Vincular a entrada:</label>
+      <label for="review-entry-input" class="review-files-detail__label">Vincular a entrada:</label>
       ${unmappedEntries.length > 0
-        ? `<select id="review-entry-select" class="input review-files-detail__select">
-            <option value="">— Selecione uma entrada —</option>
-            ${entriesOptions}
-          </select>
+        ? `<input type="text" id="review-entry-input" class="form-input review-files-detail__select" list="review-entries-datalist" placeholder="Digite para buscar..." autocomplete="off" />
+          <datalist id="review-entries-datalist">
+            ${datalistOptions}
+          </datalist>
           <button class="btn btn--primary btn--sm" id="btn-vincular-file" type="button">🔗 Vincular</button>`
         : `<p class="text-muted">Nenhuma entrada sem comprovante disponível.</p>`
       }
@@ -313,18 +329,31 @@ function buildFilePreview(fileId, fileName) {
  * @param {string} fileName
  */
 async function handleVincularFile(fileId, fileName) {
-  const select = document.getElementById('review-entry-select');
-  if (!select || !select.value) {
+  const input = document.getElementById('review-entry-input');
+  if (!input || !input.value.trim()) {
     showError('Selecione uma entrada para vincular.');
     return;
   }
 
-  const entryId = select.value;
-  const entry = unmappedEntries.find(e => e.id === entryId);
+  // The datalist value could be the entry ID directly or the display text
+  // Find the entry by ID first, then by matching display text
+  const inputValue = input.value.trim();
+  let entry = unmappedEntries.find(e => e.id === inputValue);
   if (!entry) {
-    showError('Entrada não encontrada.');
+    // Try matching by display text pattern "titulo • categoria • ano"
+    entry = unmappedEntries.find(e => {
+      const cat = getCategoryName(e.categoria);
+      const display = `${e.titulo || 'Sem título'} • ${cat} • ${e.ano || '—'}`;
+      return display === inputValue;
+    });
+  }
+
+  if (!entry) {
+    showError('Entrada não encontrada. Selecione uma opção da lista.');
     return;
   }
+
+  const entryId = entry.id;
 
   const btnVincular = document.getElementById('btn-vincular-file');
   if (btnVincular) btnVincular.disabled = true;
@@ -500,7 +529,7 @@ function buildOverlayHTML(item, position, total) {
           </div>
           <div class="review-overlay__detail-row">
             <dt>Categoria</dt>
-            <dd>${escapeHtml(entry.categoria || '—')}</dd>
+            <dd>${escapeHtml(getCategoryName(entry.categoria))}</dd>
           </div>
           <div class="review-overlay__detail-row">
             <dt>Carga horária</dt>
@@ -807,6 +836,17 @@ function findEntryRow(entry) {
   // The entry object should carry rowIndex from the entry-manager load
   // If not available, we'll need a lookup. For now, use a default.
   return entry._rowIndex || 2;
+}
+
+/**
+ * Resolves category ID to display name.
+ * @param {string} categoryId
+ * @returns {string}
+ */
+function getCategoryName(categoryId) {
+  if (!categoryId) return '—';
+  const cat = allCategories.find(c => c.id === categoryId);
+  return cat ? (cat.nome_display || cat.nome_xml || categoryId) : categoryId;
 }
 
 /**
