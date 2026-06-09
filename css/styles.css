@@ -1110,7 +1110,157 @@ textarea:focus-visible {
 
 
 /* ==========================================================================
-   16. Review Overlay (Req 5.1–5.11)
+   16a. Review Page (sections: auto-match + unmatched files)
+   ========================================================================== */
+
+.review-page {
+  padding: var(--spacing-lg) 0;
+}
+
+.review-page__title {
+  font-size: var(--font-size-2xl, 1.75rem);
+  font-weight: 700;
+  margin-bottom: var(--spacing-lg);
+  color: var(--color-text-primary);
+}
+
+/* Files layout: list on the left, detail on the right */
+.review-files-layout {
+  display: flex;
+  gap: var(--spacing-lg);
+  min-height: 400px;
+}
+
+.review-files-layout__list {
+  flex: 0 0 35%;
+  max-width: 35%;
+  overflow-y: auto;
+  max-height: 500px;
+  border-right: 1px solid var(--color-border);
+  padding-right: var(--spacing-md);
+}
+
+.review-files-layout__detail {
+  flex: 1;
+  padding-left: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.review-files__list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.review-files__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-sm) var(--spacing-xs);
+  border-radius: var(--radius-sm, 4px);
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.review-files__item:hover {
+  background-color: var(--color-surface-alt);
+}
+
+.review-files__item--active {
+  background-color: var(--color-info-bg);
+  border-left: 3px solid var(--color-primary);
+}
+
+.review-files__name {
+  font-size: var(--font-size-sm, 0.875rem);
+  color: var(--color-text-primary);
+  word-break: break-all;
+  flex: 1;
+  margin-right: var(--spacing-xs);
+}
+
+.review-files__btn-preview {
+  flex-shrink: 0;
+}
+
+/* Detail panel */
+.review-files-detail__preview {
+  flex: 1;
+  min-height: 250px;
+}
+
+.review-files-detail__filename {
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  margin-bottom: var(--spacing-sm);
+  color: var(--color-text-primary);
+}
+
+.review-files-detail__iframe {
+  width: 100%;
+  height: 300px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 4px);
+}
+
+.review-files-detail__img {
+  width: 100%;
+  max-height: 300px;
+  object-fit: contain;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 4px);
+}
+
+.review-files-detail__bind {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+  padding-top: var(--spacing-md);
+  border-top: 1px solid var(--color-border);
+}
+
+.review-files-detail__label {
+  font-size: var(--font-size-sm, 0.875rem);
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.review-files-detail__select {
+  flex: 1;
+  min-width: 200px;
+}
+
+/* Responsive: stack files layout vertically on narrow viewports */
+@media (max-width: 767px) {
+  .review-files-layout {
+    flex-direction: column;
+  }
+
+  .review-files-layout__list {
+    flex: none;
+    max-width: 100%;
+    max-height: 200px;
+    border-right: none;
+    border-bottom: 1px solid var(--color-border);
+    padding-right: 0;
+    padding-bottom: var(--spacing-md);
+  }
+
+  .review-files-layout__detail {
+    padding-left: 0;
+  }
+
+  .review-files-detail__bind {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+/* ==========================================================================
+   16b. Review Overlay (Req 5.1–5.11)
    Fullscreen overlay for reviewing file-to-entry match suggestions.
    ========================================================================== */
 
@@ -2084,4 +2234,21 @@ textarea:focus-visible {
 .entry-item__hide-btn:hover {
   opacity: 1;
   background-color: var(--color-surface-alt);
+}
+
+
+/* Active file item in the unmapped list */
+.entries-detail__file-item--active {
+  background-color: var(--color-info-bg) !important;
+  border-color: var(--color-primary-light);
+}
+
+/* File name shown above the preview */
+.entries-detail__preview-filename {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  margin-bottom: var(--spacing-sm);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  background-color: var(--color-surface-alt);
+  border-radius: var(--radius-sm);
 }

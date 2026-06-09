@@ -805,6 +805,11 @@ async function renderUnmappedDetail(container, entry) {
         const layoutEl = document.querySelector('.entries-layout');
         if (!previewArea) return;
 
+        // Remove highlight from all items
+        container.querySelectorAll('.entries-detail__file-item').forEach(li => {
+          li.classList.remove('entries-detail__file-item--active');
+        });
+
         // If clicking same file again, hide preview
         if (previewArea.dataset.currentFileId === fileId) {
           previewArea.innerHTML = '';
@@ -813,12 +818,17 @@ async function renderUnmappedDetail(container, entry) {
           return;
         }
 
-        // Render preview in the shared area below the file list
+        // Highlight the selected file item
+        const selectedItem = container.querySelector(`li[data-file-id="${fileId}"]`);
+        if (selectedItem) selectedItem.classList.add('entries-detail__file-item--active');
+
+        // Render preview with file name header
         previewArea.dataset.currentFileId = fileId;
+        const headerHtml = `<p class="entries-detail__preview-filename"><strong>Visualizando:</strong> ${fileName}</p>`;
         if (isImage) {
-          previewArea.innerHTML = `<img src="https://drive.google.com/uc?id=${fileId}" alt="${fileName}" />`;
+          previewArea.innerHTML = `${headerHtml}<img src="https://drive.google.com/uc?id=${fileId}" alt="${fileName}" />`;
         } else {
-          previewArea.innerHTML = `<iframe src="https://drive.google.com/file/d/${fileId}/preview" title="Preview ${fileName}"></iframe>`;
+          previewArea.innerHTML = `${headerHtml}<iframe src="https://drive.google.com/file/d/${fileId}/preview" title="Preview ${fileName}"></iframe>`;
         }
         if (layoutEl) layoutEl.classList.add('entries-layout--preview-active');
       });

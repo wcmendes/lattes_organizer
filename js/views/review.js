@@ -1,7 +1,11 @@
 /**
  * Review View — ComprovaLattes
  *
- * Fullscreen overlay for reviewing file-to-entry match suggestions.
+ * Two-section page:
+ * 1. Auto-match suggestions summary + overlay trigger
+ * 2. Unmatched files from "files/novos/" with preview and manual association
+ *
+ * The fullscreen overlay for reviewing file-to-entry match suggestions is kept intact.
  * Presents one suggestion at a time with side-by-side layout:
  * - Left: entry data + confidence score
  * - Right: file preview + extracted snippet with highlights
@@ -16,8 +20,9 @@
  */
 
 import { getReviewQueue, removeFromReviewQueue } from '../core/review-queue.js';
-import { moveFile, renameFile, findFolder, createFolder } from '../services/drive.js';
+import { listFiles, moveFile, renameFile, findFolder, createFolder } from '../services/drive.js';
 import { updateRow } from '../services/sheets.js';
+import { loadEntries } from '../core/entry-manager.js';
 import { loadConfig } from '../config.js';
 import { showSuccess, showError } from '../ui/toast.js';
 import { categorySlug } from '../core/xml-parser.js';
@@ -34,24 +39,55 @@ let currentIndex = 0;
 /** @type {boolean} indicates if an async operation is in progress */
 let processing = false;
 
+/** @type {Array<Object>} files loaded from "files/novos/" */
+let unmatchedFiles = [];
+
+/** @type {Array<Object>} entries without mapping (status pendente) */
+let unmappedEntries = [];
+
+/** @type {string|null} currently selected file ID for preview */
+let selectedFileId = null;
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
 /**
- * Renders the review view placeholder.
- * The actual overlay is rendered on-demand via show().
+ * Renders the review page with both sections.
  * @returns {string}
  */
 export function render() {
-  return `<div id="review-view"></div>`;
+  return `
+    <div class="container">
+      <div class="review-page">
+        <h1 class="review-page__title">Revisão</h1>
+
+        <!-- Auto-match section -->
+        <div class="card mb-lg" id="review-automatch-section">
+          <div class="card__header">
+            <h2 class="card__title">Sugestões de Auto-Match</h2>
+          </div>
+          <div class="card__body" id="review-automatch-content">Carregando...</div>
+        </div>
+
+        <!-- Unmatched files section -->
+        <div class="card" id="review-files-section">
+          <div class="card__header">
+            <h2 class="card__title">Arquivos sem Match</h2>
+          </div>
+          <div class="card__body" id="review-files-content">Carregando...</div>
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 /**
- * Mounts the review view. No-op since overlay is triggered via show().
+ * Mounts the review view: populates both sections.
  */
 export function mount() {
-  // nothing to mount — overlay is invoked via show()
+  renderAutomatchSection();
+  loadUnmatchedFiles();
 }
 
 /**
@@ -69,6 +105,294 @@ export function show() {
 
   createOverlay();
   renderCurrentItem();
+}
+
+// ---------------------------------------------------------------------------
+// Section 1: Auto-match suggestions
+// ---------------------------------------------------------------------------
+
+/**
+ * Renders the auto-match section content based on the review queue size.
+ */
+function renderAutomatchSection() {
+  const container = document.getElementById('review-automatch-content');
+  if (!container) return;
+
+  const reviewQueue = getReviewQueue();
+  const count = reviewQueue.length;
+
+  if (count === 0) {
+    container.innerHTML = `<p class="text-muted">Nenhuma sugestão pendente.</p>`;
+  } else {
+    container.innerHTML = `
+      <p>Há <strong>${count}</strong> sugestão(ões) pendente(s) de revisão do auto-match.</p>
+      <button class="btn btn--primary" id="btn-open-review-overlay" type="button">
+        Revisar sugestões (${count})
+      </button>
+    `;
+    const btn = document.getElementById('btn-open-review-overlay');
+    if (btn) {
+      btn.addEventListener('click', () => show());
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Section 2: Unmatched files from "files/novos/"
+// ---------------------------------------------------------------------------
+
+/**
+ * Loads files from "files/novos/" and unmatched entries, then renders the section.
+ */
+async function loadUnmatchedFiles() {
+  const container = document.getElementById('review-files-content');
+  if (!container) return;
+
+  try {
+    const config = loadConfig();
+    if (!config.root_folder_id || !config.spreadsheet_id) {
+      container.innerHTML = '<p class="text-muted">Configure a pasta raiz e planilha nas Configurações.</p>';
+      return;
+    }
+
+    // Load entries and find unmapped ones
+    const allEntries = await loadEntries(config.spreadsheet_id);
+    unmappedEntries = allEntries.filter(e => !e.arquivo_drive_id && e.status !== 'removida');
+
+    // Find "files/novos/" folder
+    const filesFolderId = await findFolder('files', config.root_folder_id);
+    if (!filesFolderId) {
+      container.innerHTML = '<p class="text-muted">Pasta "files/" não encontrada no Drive.</p>';
+      return;
+    }
+
+    const novosFolderId = await findFolder('novos', filesFolderId);
+    if (!novosFolderId) {
+      container.innerHTML = '<p class="text-muted">Pasta "files/novos/" não encontrada no Drive.</p>';
+      return;
+    }
+
+    unmatchedFiles = await listFiles(novosFolderId);
+    unmatchedFiles.sort((a, b) => a.name.localeCompare(b.name));
+
+    if (unmatchedFiles.length === 0) {
+      container.innerHTML = '<p class="text-muted">Nenhum arquivo sem match em "files/novos/".</p>';
+      return;
+    }
+
+    renderFilesSection(container);
+  } catch (err) {
+    container.innerHTML = `<p class="text-muted">Erro ao carregar arquivos: ${escapeHtml(err.message)}</p>`;
+  }
+}
+
+/**
+ * Renders the files list + detail panel layout.
+ * @param {HTMLElement} container
+ */
+function renderFilesSection(container) {
+  container.innerHTML = `
+    <div class="review-files-layout">
+      <div class="review-files-layout__list">
+        <p class="text-muted mb-sm">${unmatchedFiles.length} arquivo(s) disponível(is)</p>
+        <ul class="review-files__list" id="review-files-list">
+          ${unmatchedFiles.map(file => `
+            <li class="review-files__item" data-file-id="${file.id}">
+              <span class="review-files__name">${escapeHtml(file.name)}</span>
+              <button class="btn btn--outline btn--sm review-files__btn-preview" data-file-id="${file.id}" data-file-name="${escapeHtml(file.name)}" type="button" title="Visualizar">
+                👁
+              </button>
+            </li>
+          `).join('')}
+        </ul>
+      </div>
+      <div class="review-files-layout__detail" id="review-files-detail">
+        <p class="text-muted">Selecione um arquivo para visualizar e vincular.</p>
+      </div>
+    </div>
+  `;
+
+  attachFilesListeners();
+}
+
+/**
+ * Attaches click listeners to file items and preview buttons.
+ */
+function attachFilesListeners() {
+  const list = document.getElementById('review-files-list');
+  if (!list) return;
+
+  list.addEventListener('click', (e) => {
+    const previewBtn = e.target.closest('.review-files__btn-preview');
+    if (previewBtn) {
+      const fileId = previewBtn.dataset.fileId;
+      const fileName = previewBtn.dataset.fileName;
+      selectFile(fileId, fileName);
+      return;
+    }
+
+    const item = e.target.closest('.review-files__item');
+    if (item) {
+      const fileId = item.dataset.fileId;
+      const file = unmatchedFiles.find(f => f.id === fileId);
+      if (file) {
+        selectFile(file.id, file.name);
+      }
+    }
+  });
+}
+
+/**
+ * Selects a file and shows its preview + entry selector in the detail panel.
+ * @param {string} fileId
+ * @param {string} fileName
+ */
+function selectFile(fileId, fileName) {
+  selectedFileId = fileId;
+
+  // Highlight selected item in the list
+  const items = document.querySelectorAll('.review-files__item');
+  items.forEach(item => {
+    item.classList.toggle('review-files__item--active', item.dataset.fileId === fileId);
+  });
+
+  const detail = document.getElementById('review-files-detail');
+  if (!detail) return;
+
+  const previewHtml = buildFilePreview(fileId, fileName);
+  const entriesOptions = unmappedEntries.map(entry =>
+    `<option value="${escapeHtml(entry.id)}">${escapeHtml(entry.titulo || 'Sem título')} (${escapeHtml(entry.ano || '—')})</option>`
+  ).join('');
+
+  detail.innerHTML = `
+    <div class="review-files-detail__preview">
+      <h3 class="review-files-detail__filename">${escapeHtml(fileName)}</h3>
+      ${previewHtml}
+    </div>
+    <div class="review-files-detail__bind">
+      <label for="review-entry-select" class="review-files-detail__label">Vincular a entrada:</label>
+      ${unmappedEntries.length > 0
+        ? `<select id="review-entry-select" class="input review-files-detail__select">
+            <option value="">— Selecione uma entrada —</option>
+            ${entriesOptions}
+          </select>
+          <button class="btn btn--primary btn--sm" id="btn-vincular-file" type="button">🔗 Vincular</button>`
+        : `<p class="text-muted">Nenhuma entrada sem comprovante disponível.</p>`
+      }
+    </div>
+  `;
+
+  // Attach vincular button listener
+  const btnVincular = document.getElementById('btn-vincular-file');
+  if (btnVincular) {
+    btnVincular.addEventListener('click', () => handleVincularFile(fileId, fileName));
+  }
+}
+
+/**
+ * Builds preview HTML for a file (iframe or img).
+ * @param {string} fileId
+ * @param {string} fileName
+ * @returns {string}
+ */
+function buildFilePreview(fileId, fileName) {
+  const ext = getFileExtension(fileName).replace('.', '');
+  const drivePreviewUrl = `https://drive.google.com/file/d/${fileId}/preview`;
+
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].includes(ext)) {
+    const imgUrl = `https://drive.google.com/uc?id=${fileId}`;
+    return `<img class="review-files-detail__img" src="${imgUrl}" alt="Preview de ${escapeHtml(fileName)}" />`;
+  }
+
+  return `<iframe class="review-files-detail__iframe" src="${drivePreviewUrl}" title="Preview do arquivo ${escapeHtml(fileName)}" allowfullscreen></iframe>`;
+}
+
+/**
+ * Handles binding the selected file to the chosen entry.
+ * @param {string} fileId
+ * @param {string} fileName
+ */
+async function handleVincularFile(fileId, fileName) {
+  const select = document.getElementById('review-entry-select');
+  if (!select || !select.value) {
+    showError('Selecione uma entrada para vincular.');
+    return;
+  }
+
+  const entryId = select.value;
+  const entry = unmappedEntries.find(e => e.id === entryId);
+  if (!entry) {
+    showError('Entrada não encontrada.');
+    return;
+  }
+
+  const btnVincular = document.getElementById('btn-vincular-file');
+  if (btnVincular) btnVincular.disabled = true;
+
+  try {
+    const config = loadConfig();
+    const rootFolderId = config.root_folder_id;
+
+    // Determine target folder for the category
+    const slug = categorySlug(entry.categoria || '');
+    let targetFolderId = await findFolder(slug, rootFolderId);
+    if (!targetFolderId) {
+      targetFolderId = await createFolder(slug, rootFolderId);
+    }
+
+    // Find the source folder (novos)
+    const filesFolderId = await findFolder('files', rootFolderId);
+    const novosFolderId = await findFolder('novos', filesFolderId);
+
+    // Build the new file name
+    const ext = getFileExtension(fileName);
+    const newName = buildFileName(entry.ano, slug, entry.instituicao, entry.titulo, ext);
+
+    // Move file to category folder
+    await moveFile(fileId, novosFolderId, targetFolderId);
+
+    // Rename file
+    await renameFile(fileId, newName);
+
+    // Update entry in spreadsheet
+    if (config.spreadsheet_id && entry.id) {
+      const now = new Date().toISOString().split('T')[0];
+      await updateRow(config.spreadsheet_id, 'entradas', findEntryRow(entry), {
+        id: entry.id,
+        titulo: entry.titulo || '',
+        instituicao: entry.instituicao || '',
+        ano: entry.ano || '',
+        carga_horaria: entry.carga_horaria || '',
+        categoria: entry.categoria || '',
+        status: 'mapeada',
+        oculta: entry.oculta ? 'TRUE' : 'FALSE',
+        arquivo_drive_id: fileId,
+        arquivo_nome: newName,
+        confianca: '',
+        data_mapeamento: now,
+        arquivo_hash: entry.arquivo_hash || '',
+      });
+    }
+
+    // Remove from local lists
+    unmatchedFiles = unmatchedFiles.filter(f => f.id !== fileId);
+    unmappedEntries = unmappedEntries.filter(e => e.id !== entryId);
+
+    showSuccess(`Arquivo vinculado a "${escapeHtml(entry.titulo || 'entrada')}".`);
+
+    // Re-render the files section
+    const container = document.getElementById('review-files-content');
+    if (container) {
+      if (unmatchedFiles.length === 0) {
+        container.innerHTML = '<p class="text-muted">Nenhum arquivo sem match em "files/novos/".</p>';
+      } else {
+        renderFilesSection(container);
+      }
+    }
+  } catch (err) {
+    showError(`Falha ao vincular: ${err.message}`);
+    if (btnVincular) btnVincular.disabled = false;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -103,6 +427,8 @@ function closeOverlay() {
     overlayEl.remove();
     overlayEl = null;
   }
+  // Refresh the auto-match section count after overlay closes
+  renderAutomatchSection();
 }
 
 /**
@@ -116,7 +442,7 @@ function handleKeydown(e) {
 }
 
 // ---------------------------------------------------------------------------
-// Rendering
+// Rendering (Overlay)
 // ---------------------------------------------------------------------------
 
 /**
@@ -135,7 +461,7 @@ function renderCurrentItem() {
   const position = currentIndex + 1;
 
   overlayEl.innerHTML = buildOverlayHTML(item, position, total);
-  attachListeners();
+  attachOverlayListeners();
 }
 
 /**
@@ -225,7 +551,7 @@ function buildOverlayHTML(item, position, total) {
 /**
  * Attaches event listeners to the current overlay buttons.
  */
-function attachListeners() {
+function attachOverlayListeners() {
   if (!overlayEl) return;
 
   const btnClose = overlayEl.querySelector('.review-overlay__close');
@@ -495,7 +821,7 @@ function getScoreColor(score) {
 }
 
 /**
- * Builds the preview HTML for a file.
+ * Builds the preview HTML for a file (overlay version).
  * PDF → embedded iframe, images → img tag, others → filename display.
  * @param {string} fileId
  * @param {string} fileName
