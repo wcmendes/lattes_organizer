@@ -339,7 +339,6 @@ function extractPatternA(activityElement) {
     }
 
     if (tagName.startsWith('DETALHAMENTO')) {
-      // NOME-DO-EVENTO é o título real para participações em eventos
       const nomeEvento = child.getAttribute('NOME-DO-EVENTO') || '';
       
       instituicao = child.getAttribute('NOME-INSTITUICAO') || '';
@@ -348,9 +347,23 @@ function extractPatternA(activityElement) {
       if (!instituicao) instituicao = child.getAttribute('NOME-DA-PLATAFORMA') || '';
       carga_horaria = child.getAttribute('CARGA-HORARIA') || '';
       
-      // NOME-DO-EVENTO sempre prevalece sobre NATUREZA como título
+      // Handle NOME-DO-EVENTO:
+      const genericTitles = new Set(['OUTRA', 'CONGRESSO', 'SIMPOSIO', 'SEMINARIO', 'ENCONTRO', 'OFICINA', 'CONFERENCIA', 'WORKSHOP', 'FEIRA', 'FESTIVAL', 'EXPOSICAO', 'COMPLETO', 'RESUMO', 'RESUMO_EXPANDIDO']);
+      const tituloIsGeneric = genericTitles.has(titulo.toUpperCase().replace(/[^A-Z_]/g, ''));
+      
       if (nomeEvento) {
-        titulo = nomeEvento;
+        if (tituloIsGeneric) {
+          // Title is generic → use event name as title
+          titulo = nomeEvento;
+        } else {
+          // Title is real → store event name as institution (shown on second line)
+          if (!instituicao) {
+            instituicao = nomeEvento;
+          } else if (instituicao !== nomeEvento) {
+            // Has both institution and event name — append event
+            instituicao = `${instituicao} • ${nomeEvento}`;
+          }
+        }
       }
     }
   }
