@@ -277,7 +277,8 @@ function selectFile(fileId, fileName) {
   const previewHtml = buildFilePreview(fileId, fileName);
   const datalistOptions = unmappedEntries.map(entry => {
     const cat = getCategoryName(entry.categoria);
-    return `<option value="${escapeHtml(entry.id)}" label="${escapeHtml(entry.titulo || 'Sem título')} • ${escapeHtml(cat)} • ${escapeHtml(entry.ano || '—')}">${escapeHtml(entry.titulo || 'Sem título')} • ${escapeHtml(cat)} • ${escapeHtml(entry.ano || '—')}</option>`;
+    const display = `${entry.titulo || 'Sem título'} • ${cat} • ${entry.ano || '—'}`;
+    return `<option value="${escapeHtml(display)}"></option>`;
   }).join('');
 
   detail.innerHTML = `
