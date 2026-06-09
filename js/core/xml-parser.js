@@ -339,12 +339,26 @@ function extractPatternA(activityElement) {
     }
 
     if (tagName.startsWith('DETALHAMENTO')) {
+      // NOME-DO-EVENTO pode ser o título real para participações em eventos
+      const nomeEvento = child.getAttribute('NOME-DO-EVENTO') || '';
+      
       instituicao = child.getAttribute('NOME-INSTITUICAO') || '';
       if (!instituicao) instituicao = child.getAttribute('NOME-DA-INSTITUICAO') || '';
-      if (!instituicao) instituicao = child.getAttribute('NOME-DO-EVENTO') || '';
       if (!instituicao) instituicao = child.getAttribute('TITULO-DO-PERIODICO-OU-REVISTA') || '';
       if (!instituicao) instituicao = child.getAttribute('NOME-DA-PLATAFORMA') || '';
       carga_horaria = child.getAttribute('CARGA-HORARIA') || '';
+      
+      // Se o título veio como NATUREZA (genérico) e tem NOME-DO-EVENTO, usar o evento como título
+      if (nomeEvento && (!titulo || titulo === titulo.toUpperCase())) {
+        // titulo is probably NATUREZA (all uppercase like "CONGRESSO") — use event name instead
+        if (nomeEvento.length > titulo.length) {
+          instituicao = instituicao || titulo; // put NATUREZA as institution context
+          titulo = nomeEvento;
+        }
+      }
+      if (!instituicao && nomeEvento && nomeEvento !== titulo) {
+        instituicao = nomeEvento;
+      }
     }
   }
 
