@@ -29,6 +29,9 @@ let _onUserInfoReady = null;
  */
 export function initAuth(config) {
   const scopes = config.scopes || [
+    'openid',
+    'profile',
+    'email',
     'https://www.googleapis.com/auth/spreadsheets',
     'https://www.googleapis.com/auth/drive.file'
   ];
