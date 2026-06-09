@@ -209,14 +209,18 @@ function renderFilesSection(container) {
   container.innerHTML = `
     <div class="review-files-layout">
       <div class="review-files-layout__list">
-        <p class="text-muted mb-sm">${unmatchedFiles.length} arquivo(s) disponível(is)</p>
+        <div class="entries-detail__bulk-actions mb-sm">
+          <span class="text-muted">${unmatchedFiles.length} arquivo(s)</span>
+          <button class="btn btn--danger btn--sm" id="btn-review-excluir-todos" type="button">🗑 Excluir todos</button>
+        </div>
         <ul class="review-files__list" id="review-files-list">
           ${unmatchedFiles.map(file => `
             <li class="review-files__item" data-file-id="${file.id}">
               <span class="review-files__name">${escapeHtml(file.name)}</span>
-              <button class="btn btn--outline btn--sm review-files__btn-preview" data-file-id="${file.id}" data-file-name="${escapeHtml(file.name)}" type="button" title="Visualizar">
-                👁
-              </button>
+              <div class="review-files__actions">
+                <button class="btn btn--outline btn--sm review-files__btn-preview" data-file-id="${file.id}" data-file-name="${escapeHtml(file.name)}" type="button" title="Visualizar">👁</button>
+                <button class="btn btn--outline btn--sm review-files__btn-delete" data-file-id="${file.id}" data-file-name="${escapeHtml(file.name)}" type="button" title="Excluir">🗑</button>
+              </div>
             </li>
           `).join('')}
         </ul>
@@ -255,6 +259,61 @@ function attachFilesListeners() {
       }
     }
   });
+
+  // Individual delete buttons
+  list.addEventListener('click', async (e) => {
+    const deleteBtn = e.target.closest('.review-files__btn-delete');
+    if (!deleteBtn) return;
+    e.stopPropagation();
+    
+    const fileId = deleteBtn.dataset.fileId;
+    const fileName = deleteBtn.dataset.fileName;
+    if (!confirm(`Excluir "${fileName}" permanentemente do Drive?`)) return;
+    
+    try {
+      const { deleteFile } = await import('../services/drive.js');
+      await deleteFile(fileId);
+      unmatchedFiles = unmatchedFiles.filter(f => f.id !== fileId);
+      showSuccess(`"${fileName}" excluído.`);
+      
+      const container = document.getElementById('review-files-content');
+      if (container) {
+        if (unmatchedFiles.length === 0) {
+          container.innerHTML = '<p class="text-muted">Nenhum arquivo sem match.</p>';
+        } else {
+          renderFilesSection(container);
+        }
+      }
+    } catch (err) {
+      showError(`Erro ao excluir: ${err.message}`);
+    }
+  });
+
+  // Bulk delete button
+  const btnBulkDelete = document.getElementById('btn-review-excluir-todos');
+  if (btnBulkDelete) {
+    btnBulkDelete.addEventListener('click', async () => {
+      if (!confirm(`Excluir TODOS os ${unmatchedFiles.length} arquivos sem match? Não pode ser desfeito.`)) return;
+      
+      const { deleteFile } = await import('../services/drive.js');
+      let deleted = 0;
+      for (const f of [...unmatchedFiles]) {
+        try {
+          await deleteFile(f.id);
+          deleted++;
+        } catch (err) {
+          showError(`Falha em "${f.name}": ${err.message}`);
+        }
+      }
+      unmatchedFiles = [];
+      showSuccess(`${deleted} arquivo(s) excluído(s).`);
+      
+      const container = document.getElementById('review-files-content');
+      if (container) {
+        container.innerHTML = '<p class="text-muted">Nenhum arquivo sem match.</p>';
+      }
+    });
+  }
 }
 
 /**

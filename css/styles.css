@@ -2258,3 +2258,11 @@ textarea:focus-visible {
   background-color: var(--color-surface-alt);
   border-radius: var(--radius-sm);
 }
+
+
+/* Review files item actions */
+.review-files__actions {
+  display: flex;
+  gap: var(--spacing-xs);
+  flex-shrink: 0;
+}
