@@ -16,6 +16,7 @@
 import { loadConfig, saveConfig } from '../config.js';
 import { createSpreadsheet, getRows } from '../services/sheets.js';
 import { createFolder, findFolder, moveFile } from '../services/drive.js';
+import { loadEntries } from '../core/entry-manager.js';
 
 /** @type {number|null} Debounce timer for save operations */
 let saveTimer = null;
@@ -387,25 +388,29 @@ function renderSettingsForm(config) {
           </div>
         </div>
 
-        <!-- Manutenção -->
+        <!-- Manutenção: Reset -->
         <div class="card mt-lg">
           <div class="card__header">
             <h2 class="card__title">Manutenção</h2>
           </div>
           <div class="form-group">
             <p class="text-muted mb-md">Ferramentas de manutenção para resolver problemas de dados.</p>
-            <div style="display: flex; flex-direction: column; gap: var(--spacing-md);">
-              <div>
-                <button class="btn btn--danger btn--sm" id="btn-reset-data" type="button">🗑 Resetar entradas e categorias</button>
-                <p class="text-muted mt-sm" style="font-size: 0.75rem;">Limpa todas as entradas e categorias da planilha. Reimporte o XML depois.</p>
-              </div>
-              <div>
-                <button class="btn btn--outline btn--sm" id="btn-check-orphans" type="button">🔍 Verificar arquivos órfãos</button>
-                <p class="text-muted mt-sm" style="font-size: 0.75rem;">Lista arquivos no Drive que não estão associados a nenhuma entrada.</p>
-              </div>
-            </div>
+            <button class="btn btn--danger btn--sm" id="btn-reset-data" type="button">🗑 Resetar entradas e categorias</button>
+            <p class="text-muted mt-sm" style="font-size: 0.75rem;">Limpa todas as entradas e categorias da planilha. Reimporte o XML depois.</p>
             <div id="settings-maintenance-result" class="mt-md"></div>
           </div>
+        </div>
+
+        <!-- Orphan Files Check -->
+        <div class="card mt-lg">
+          <div class="card__header">
+            <h2 class="card__title">Manutenção</h2>
+          </div>
+          <p class="text-muted mb-md">
+            Verifique arquivos órfãos (que estão no Drive mas não estão vinculados a nenhuma entrada na planilha).
+          </p>
+          <button id="btn-check-orphans" class="btn btn--outline" type="button">Verificar arquivos órfãos</button>
+          <div id="orphans-result" class="mt-md"></div>
         </div>
       </div>
     </div>
@@ -546,19 +551,13 @@ function mountSettingsForm() {
         const config = loadConfig();
         if (!config.spreadsheet_id) throw new Error('Planilha não configurada');
         
-        const { batchUpdate } = await import('../services/sheets.js');
+        const { clearRange } = await import('../services/sheets.js');
         
-        // Clear entradas (write empty range)
-        await batchUpdate(config.spreadsheet_id, [{
-          range: 'entradas!A2:Z1000',
-          values: [[]]
-        }]);
+        // Clear entradas (all data rows, keep header)
+        await clearRange(config.spreadsheet_id, 'entradas!A2:Z10000');
         
-        // Clear categorias
-        await batchUpdate(config.spreadsheet_id, [{
-          range: 'categorias!A2:Z1000',
-          values: [[]]
-        }]);
+        // Clear categorias (all data rows, keep header)
+        await clearRange(config.spreadsheet_id, 'categorias!A2:Z10000');
         
         if (resultEl) resultEl.innerHTML = '<p style="color: var(--color-success);">✓ Dados limpos com sucesso. Reimporte o XML Lattes.</p>';
       } catch (err) {
@@ -573,84 +572,126 @@ function mountSettingsForm() {
   // Maintenance: Check orphan files
   const btnOrphans = document.getElementById('btn-check-orphans');
   if (btnOrphans) {
-    btnOrphans.addEventListener('click', async () => {
-      btnOrphans.disabled = true;
-      btnOrphans.textContent = 'Verificando...';
-      const resultEl = document.getElementById('settings-maintenance-result');
-      
-      try {
-        const config = loadConfig();
-        if (!config.root_folder_id || !config.spreadsheet_id) throw new Error('Configuração incompleta');
-        
-        const { listFiles: listDriveFiles, findFolder: findDriveFolder } = await import('../services/drive.js');
-        const { getRows } = await import('../services/sheets.js');
-        
-        // Get all arquivo_drive_id from entries
-        const entries = await getRows(config.spreadsheet_id, 'entradas');
-        const linkedIds = new Set(entries.map(e => e.arquivo_drive_id).filter(Boolean));
-        
-        // Scan all category folders for files
-        const filesFolderId = await findDriveFolder('files', config.root_folder_id);
-        if (!filesFolderId) throw new Error('Pasta "files/" não encontrada');
-        
-        const subfolders = await listDriveFiles(filesFolderId);
-        const orphans = [];
-        
-        for (const folder of subfolders) {
-          if (folder.mimeType === 'application/vnd.google-apps.folder' && folder.name !== 'novos') {
-            const files = await listDriveFiles(folder.id);
-            for (const file of files) {
-              if (!linkedIds.has(file.id)) {
-                orphans.push({ ...file, folder: folder.name });
-              }
-            }
+    btnOrphans.addEventListener('click', checkOrphanFiles);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Orphan Files Detection
+// ---------------------------------------------------------------------------
+
+/**
+ * Checks for orphan files in Drive that are not linked to any spreadsheet entry.
+ * Scans all subfolders under "files/" (including "novos/") and compares with
+ * arquivo_drive_id values from the spreadsheet entries.
+ */
+async function checkOrphanFiles() {
+  const resultEl = document.getElementById('orphans-result');
+  if (!resultEl) return;
+  resultEl.innerHTML = '<p class="text-muted">Verificando...</p>';
+
+  try {
+    const config = loadConfig();
+    const entries = await loadEntries(config.spreadsheet_id);
+    const knownFileIds = new Set(entries.filter(e => e.arquivo_drive_id).map(e => e.arquivo_drive_id));
+
+    // Import drive functions
+    const { listFiles, findFolder: findDriveFolder, moveFile: moveDriveFile, deleteFile } = await import('../services/drive.js');
+
+    // List all files in category subfolders
+    const filesFolderId = await findDriveFolder('files', config.root_folder_id);
+    if (!filesFolderId) {
+      resultEl.innerHTML = '<p class="text-muted">Pasta "files/" não encontrada.</p>';
+      return;
+    }
+
+    // Get all subfolders (including novos/)
+    const allDriveFiles = [];
+    const subItems = await listFiles(filesFolderId);
+
+    for (const item of subItems) {
+      if (item.mimeType === 'application/vnd.google-apps.folder') {
+        const folderFiles = await listFiles(item.id);
+        for (const f of folderFiles) {
+          if (f.mimeType !== 'application/vnd.google-apps.folder') {
+            allDriveFiles.push({ ...f, folder: item.name });
           }
         }
-        
-        if (orphans.length === 0) {
-          if (resultEl) resultEl.innerHTML = '<p style="color: var(--color-success);">✓ Nenhum arquivo órfão encontrado.</p>';
-        } else {
-          let html = `<p><strong>${orphans.length} arquivo(s) órfão(s) encontrado(s):</strong></p><ul style="font-size: 0.8rem; max-height: 200px; overflow-y: auto;">`;
-          for (const f of orphans) {
-            html += `<li>${f.name} (pasta: ${f.folder})</li>`;
-          }
-          html += '</ul>';
-          html += `<button class="btn btn--outline btn--sm mt-sm" id="btn-move-orphans">Mover todos para "novos/"</button>`;
-          if (resultEl) {
-            resultEl.innerHTML = html;
-            
-            const btnMove = document.getElementById('btn-move-orphans');
-            if (btnMove) {
-              btnMove.addEventListener('click', async () => {
-                btnMove.disabled = true;
-                btnMove.textContent = 'Movendo...';
-                const { moveFile } = await import('../services/drive.js');
-                const novosFolderId = await findDriveFolder('novos', filesFolderId);
-                if (!novosFolderId) { alert('Pasta novos/ não encontrada'); return; }
-                
-                let moved = 0;
-                for (const f of orphans) {
-                  try {
-                    // Find the source folder
-                    const srcFolder = subfolders.find(s => s.name === f.folder);
-                    if (srcFolder) {
-                      await moveFile(f.id, srcFolder.id, novosFolderId);
-                      moved++;
-                    }
-                  } catch (e) { /* skip */ }
-                }
-                resultEl.innerHTML = `<p style="color: var(--color-success);">✓ ${moved} arquivo(s) movido(s) para "novos/".</p>`;
-              });
-            }
-          }
-        }
-      } catch (err) {
-        if (resultEl) resultEl.innerHTML = `<p style="color: var(--color-error);">Erro: ${err.message}</p>`;
-      } finally {
-        btnOrphans.disabled = false;
-        btnOrphans.textContent = '🔍 Verificar arquivos órfãos';
       }
+    }
+
+    // Find orphans
+    const orphans = allDriveFiles.filter(f => !knownFileIds.has(f.id));
+
+    if (orphans.length === 0) {
+      resultEl.innerHTML = '<p style="color: var(--color-success);">Nenhum arquivo órfão encontrado. ✓</p>';
+      return;
+    }
+
+    // Find novos folder for "move" action
+    const novosFolderId = await findDriveFolder('novos', filesFolderId);
+
+    let html = `<p><strong>${orphans.length} arquivo(s) órfão(s) encontrado(s):</strong></p>`;
+    html += `<button class="btn btn--outline btn--sm mb-md" id="btn-move-all-orphans">Mover todos para "novos/"</button>`;
+    html += '<ul style="list-style:none; padding:0;">';
+    for (const f of orphans) {
+      html += `<li style="display:flex; align-items:center; gap:0.5rem; padding:0.25rem 0; border-bottom:1px solid var(--color-border);">
+        <span style="flex:1; font-size:0.875rem;">${f.name} <small style="color:var(--color-text-muted);">(${f.folder})</small></span>
+        <button class="btn btn--outline btn--sm btn-move-orphan" data-file-id="${f.id}" data-folder="${f.folder}">→ novos/</button>
+        <button class="btn btn--outline btn--sm btn-delete-orphan" data-file-id="${f.id}" data-file-name="${f.name}" style="color:var(--color-error);">🗑</button>
+      </li>`;
+    }
+    html += '</ul>';
+    resultEl.innerHTML = html;
+
+    // Attach individual move listeners
+    resultEl.querySelectorAll('.btn-move-orphan').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const fId = btn.dataset.fileId;
+        const folder = btn.dataset.folder;
+        try {
+          const fromFolder = await findDriveFolder(folder, filesFolderId);
+          if (fromFolder && novosFolderId) {
+            await moveDriveFile(fId, fromFolder, novosFolderId);
+            btn.closest('li').remove();
+          }
+        } catch (err) {
+          alert('Erro: ' + err.message);
+        }
+      });
     });
+
+    // Attach individual delete listeners
+    resultEl.querySelectorAll('.btn-delete-orphan').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const fId = btn.dataset.fileId;
+        const fName = btn.dataset.fileName;
+        if (!confirm(`Excluir "${fName}" permanentemente?`)) return;
+        try {
+          await deleteFile(fId);
+          btn.closest('li').remove();
+        } catch (err) {
+          alert('Erro: ' + err.message);
+        }
+      });
+    });
+
+    // Attach bulk move listener
+    const btnMoveAll = document.getElementById('btn-move-all-orphans');
+    if (btnMoveAll && novosFolderId) {
+      btnMoveAll.addEventListener('click', async () => {
+        if (!confirm(`Mover ${orphans.length} arquivos órfãos para "novos/"?`)) return;
+        for (const f of orphans) {
+          try {
+            const fromFolder = await findDriveFolder(f.folder, filesFolderId);
+            if (fromFolder) await moveDriveFile(f.id, fromFolder, novosFolderId);
+          } catch (err) { /* continue */ }
+        }
+        resultEl.innerHTML = '<p style="color: var(--color-success);">✓ Arquivos movidos para "novos/".</p>';
+      });
+    }
+  } catch (err) {
+    resultEl.innerHTML = `<p style="color: var(--color-error);">Erro: ${err.message}</p>`;
   }
 }
 

@@ -243,6 +243,25 @@ export async function batchUpdate(spreadsheetId, updates) {
 }
 
 /**
+ * Limpa (clear) um range da planilha, removendo todos os valores.
+ * Usa o endpoint values:clear do Sheets API.
+ *
+ * @param {string} spreadsheetId — ID da planilha
+ * @param {string} range — range A1 notation (ex: "entradas!A2:Z1000")
+ * @returns {Promise<void>}
+ */
+export async function clearRange(spreadsheetId, range) {
+  const url = `${BASE_URL}/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}:clear`;
+  const headers = buildHeaders();
+
+  await fetchWithRetry(url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({})
+  });
+}
+
+/**
  * Deleta uma linha específica de uma aba da planilha.
  * Usa a API de batchUpdate do Sheets para solicitar uma operação deleteDimension.
  *
