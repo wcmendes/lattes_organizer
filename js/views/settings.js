@@ -386,6 +386,27 @@ function renderSettingsForm(config) {
             <div id="settings-folder-error" class="settings__error hidden" role="alert" aria-live="polite"></div>
           </div>
         </div>
+
+        <!-- Manutenção -->
+        <div class="card mt-lg">
+          <div class="card__header">
+            <h2 class="card__title">Manutenção</h2>
+          </div>
+          <div class="form-group">
+            <p class="text-muted mb-md">Ferramentas de manutenção para resolver problemas de dados.</p>
+            <div style="display: flex; flex-direction: column; gap: var(--spacing-md);">
+              <div>
+                <button class="btn btn--danger btn--sm" id="btn-reset-data" type="button">🗑 Resetar entradas e categorias</button>
+                <p class="text-muted mt-sm" style="font-size: 0.75rem;">Limpa todas as entradas e categorias da planilha. Reimporte o XML depois.</p>
+              </div>
+              <div>
+                <button class="btn btn--outline btn--sm" id="btn-check-orphans" type="button">🔍 Verificar arquivos órfãos</button>
+                <p class="text-muted mt-sm" style="font-size: 0.75rem;">Lista arquivos no Drive que não estão associados a nenhuma entrada.</p>
+              </div>
+            </div>
+            <div id="settings-maintenance-result" class="mt-md"></div>
+          </div>
+        </div>
       </div>
     </div>
   `;
@@ -510,11 +531,128 @@ function mountSettingsForm() {
       }
     });
   }
-}
 
-// ---------------------------------------------------------------------------
-// Validation helpers (Req 10.7)
-// ---------------------------------------------------------------------------
+  // Maintenance: Reset data
+  const btnReset = document.getElementById('btn-reset-data');
+  if (btnReset) {
+    btnReset.addEventListener('click', async () => {
+      if (!confirm('ATENÇÃO: Isso vai excluir TODAS as entradas e categorias da planilha. Os arquivos no Drive não serão afetados. Deseja continuar?')) return;
+      
+      btnReset.disabled = true;
+      btnReset.textContent = 'Limpando...';
+      const resultEl = document.getElementById('settings-maintenance-result');
+      
+      try {
+        const config = loadConfig();
+        if (!config.spreadsheet_id) throw new Error('Planilha não configurada');
+        
+        const { batchUpdate } = await import('../services/sheets.js');
+        
+        // Clear entradas (write empty range)
+        await batchUpdate(config.spreadsheet_id, [{
+          range: 'entradas!A2:Z1000',
+          values: [[]]
+        }]);
+        
+        // Clear categorias
+        await batchUpdate(config.spreadsheet_id, [{
+          range: 'categorias!A2:Z1000',
+          values: [[]]
+        }]);
+        
+        if (resultEl) resultEl.innerHTML = '<p style="color: var(--color-success);">✓ Dados limpos com sucesso. Reimporte o XML Lattes.</p>';
+      } catch (err) {
+        if (resultEl) resultEl.innerHTML = `<p style="color: var(--color-error);">Erro: ${err.message}</p>`;
+      } finally {
+        btnReset.disabled = false;
+        btnReset.textContent = '🗑 Resetar entradas e categorias';
+      }
+    });
+  }
+
+  // Maintenance: Check orphan files
+  const btnOrphans = document.getElementById('btn-check-orphans');
+  if (btnOrphans) {
+    btnOrphans.addEventListener('click', async () => {
+      btnOrphans.disabled = true;
+      btnOrphans.textContent = 'Verificando...';
+      const resultEl = document.getElementById('settings-maintenance-result');
+      
+      try {
+        const config = loadConfig();
+        if (!config.root_folder_id || !config.spreadsheet_id) throw new Error('Configuração incompleta');
+        
+        const { listFiles: listDriveFiles, findFolder: findDriveFolder } = await import('../services/drive.js');
+        const { getRows } = await import('../services/sheets.js');
+        
+        // Get all arquivo_drive_id from entries
+        const entries = await getRows(config.spreadsheet_id, 'entradas');
+        const linkedIds = new Set(entries.map(e => e.arquivo_drive_id).filter(Boolean));
+        
+        // Scan all category folders for files
+        const filesFolderId = await findDriveFolder('files', config.root_folder_id);
+        if (!filesFolderId) throw new Error('Pasta "files/" não encontrada');
+        
+        const subfolders = await listDriveFiles(filesFolderId);
+        const orphans = [];
+        
+        for (const folder of subfolders) {
+          if (folder.mimeType === 'application/vnd.google-apps.folder' && folder.name !== 'novos') {
+            const files = await listDriveFiles(folder.id);
+            for (const file of files) {
+              if (!linkedIds.has(file.id)) {
+                orphans.push({ ...file, folder: folder.name });
+              }
+            }
+          }
+        }
+        
+        if (orphans.length === 0) {
+          if (resultEl) resultEl.innerHTML = '<p style="color: var(--color-success);">✓ Nenhum arquivo órfão encontrado.</p>';
+        } else {
+          let html = `<p><strong>${orphans.length} arquivo(s) órfão(s) encontrado(s):</strong></p><ul style="font-size: 0.8rem; max-height: 200px; overflow-y: auto;">`;
+          for (const f of orphans) {
+            html += `<li>${f.name} (pasta: ${f.folder})</li>`;
+          }
+          html += '</ul>';
+          html += `<button class="btn btn--outline btn--sm mt-sm" id="btn-move-orphans">Mover todos para "novos/"</button>`;
+          if (resultEl) {
+            resultEl.innerHTML = html;
+            
+            const btnMove = document.getElementById('btn-move-orphans');
+            if (btnMove) {
+              btnMove.addEventListener('click', async () => {
+                btnMove.disabled = true;
+                btnMove.textContent = 'Movendo...';
+                const { moveFile } = await import('../services/drive.js');
+                const novosFolderId = await findDriveFolder('novos', filesFolderId);
+                if (!novosFolderId) { alert('Pasta novos/ não encontrada'); return; }
+                
+                let moved = 0;
+                for (const f of orphans) {
+                  try {
+                    // Find the source folder
+                    const srcFolder = subfolders.find(s => s.name === f.folder);
+                    if (srcFolder) {
+                      await moveFile(f.id, srcFolder.id, novosFolderId);
+                      moved++;
+                    }
+                  } catch (e) { /* skip */ }
+                }
+                resultEl.innerHTML = `<p style="color: var(--color-success);">✓ ${moved} arquivo(s) movido(s) para "novos/".</p>`;
+              });
+            }
+          }
+        }
+      } catch (err) {
+        if (resultEl) resultEl.innerHTML = `<p style="color: var(--color-error);">Erro: ${err.message}</p>`;
+      } finally {
+        btnOrphans.disabled = false;
+        btnOrphans.textContent = '🔍 Verificar arquivos órfãos';
+      }
+    });
+  }
+}
 
 /**
  * Validates access to a spreadsheet by attempting to read from it.
