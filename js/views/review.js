@@ -49,6 +49,9 @@ let unmappedEntries = [];
 /** @type {Array<Object>} all categories loaded */
 let allCategories = [];
 
+/** @type {Array<Object>} all entries loaded (for row index lookup) */
+let allLoadedEntries = [];
+
 /** @type {string|null} currently selected file ID for preview */
 let selectedFileId = null;
 
@@ -171,6 +174,7 @@ async function loadUnmatchedFiles() {
 
     // Load entries and find unmapped ones
     const allEntries = await loadEntries(config.spreadsheet_id);
+    allLoadedEntries = allEntries;
     allCategories = await loadCategories(config.spreadsheet_id);
     unmappedEntries = allEntries.filter(e => !e.arquivo_drive_id && e.status !== 'removida');
 
@@ -893,9 +897,14 @@ function getFileExtension(fileName) {
  * @returns {number}
  */
 function findEntryRow(entry) {
-  // The entry object should carry rowIndex from the entry-manager load
-  // If not available, we'll need a lookup. For now, use a default.
-  return entry._rowIndex || 2;
+  // Find the real row index by looking up the entry in the full loaded array
+  // Sheets rows are 1-based, header is row 1, first data row is row 2
+  const index = allLoadedEntries.findIndex(e => e.id === entry.id);
+  if (index !== -1) {
+    return index + 2; // +2: header is row 1, data starts at row 2
+  }
+  // Fallback: if not found (shouldn't happen), return 2
+  return 2;
 }
 
 /**
