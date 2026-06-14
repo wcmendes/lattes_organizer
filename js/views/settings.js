@@ -611,6 +611,9 @@ async function checkOrphanFiles() {
 
     for (const item of subItems) {
       if (item.mimeType === 'application/vnd.google-apps.folder') {
+        // Skip "novos/" — those are pending files, not orphans
+        if (item.name === 'novos') continue;
+        
         const folderFiles = await listFiles(item.id);
         for (const f of folderFiles) {
           if (f.mimeType !== 'application/vnd.google-apps.folder') {
