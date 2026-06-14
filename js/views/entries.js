@@ -363,11 +363,20 @@ function renderEntryItem(entry) {
   const statusClass = getStatusClass(entry.status);
   const arquivo = entry.arquivo_nome ? escapeHtml(entry.arquivo_nome) : '';
 
+  // For FORMACAO-ACADEMICA categories, show type + institution as title (more intuitive)
+  let displayTitle = entry.titulo || '(sem título)';
+  const category = allCategories.find(c => c.id === entry.categoria);
+  if (category && category.nome_xml && category.nome_xml.startsWith('FORMACAO-ACADEMICA-')) {
+    const tipo = category.nome_xml.replace('FORMACAO-ACADEMICA-', '');
+    const tipoDisplay = tipo.charAt(0) + tipo.slice(1).toLowerCase(); // "MESTRADO" → "Mestrado"
+    displayTitle = `${tipoDisplay} — ${entry.instituicao || entry.titulo || ''}`;
+  }
+
   return `
     <div class="entry-item ${statusClass}" data-entry-id="${entry.id}" role="listitem" tabindex="0">
       <span class="entry-item__status" aria-label="${getStatusLabel(entry.status)}">${statusIcon}</span>
       <div class="entry-item__content">
-        <span class="entry-item__title">${escapeHtml(entry.titulo || '(sem título)')}</span>
+        <span class="entry-item__title">${escapeHtml(displayTitle)}</span>
         <span class="entry-item__meta">
           ${entry.instituicao ? escapeHtml(entry.instituicao) : ''}${entry.instituicao && entry.ano ? ' • ' : ''}${entry.ano || ''}
         </span>

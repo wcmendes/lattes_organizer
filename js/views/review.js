@@ -340,7 +340,8 @@ function selectFile(fileId, fileName) {
   const previewHtml = buildFilePreview(fileId, fileName);
   const datalistOptions = unmappedEntries.map(entry => {
     const cat = getCategoryName(entry.categoria);
-    const display = `${entry.titulo || 'Sem título'} • ${cat} • ${entry.ano || '—'}`;
+    const inst = entry.instituicao || '';
+    const display = `${entry.titulo || 'Sem título'}${inst ? ' • ' + inst : ''} • ${cat} • ${entry.ano || '—'}`;
     return `<option value="${escapeHtml(display)}"></option>`;
   }).join('');
 
@@ -404,10 +405,11 @@ async function handleVincularFile(fileId, fileName) {
   const inputValue = input.value.trim();
   let entry = unmappedEntries.find(e => e.id === inputValue);
   if (!entry) {
-    // Try matching by display text pattern "titulo • categoria • ano"
+    // Try matching by display text pattern "titulo • instituicao • categoria • ano"
     entry = unmappedEntries.find(e => {
       const cat = getCategoryName(e.categoria);
-      const display = `${e.titulo || 'Sem título'} • ${cat} • ${e.ano || '—'}`;
+      const inst = e.instituicao || '';
+      const display = `${e.titulo || 'Sem título'}${inst ? ' • ' + inst : ''} • ${cat} • ${e.ano || '—'}`;
       return display === inputValue;
     });
   }
