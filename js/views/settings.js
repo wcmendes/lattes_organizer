@@ -201,7 +201,8 @@ function mountSetupFlow() {
       const spreadsheetId = await createSpreadsheet('ComprovaLattes', [
         { name: 'entradas', headers: ['id', 'titulo', 'instituicao', 'ano', 'carga_horaria', 'categoria', 'status', 'oculta', 'arquivo_drive_id', 'arquivo_nome', 'confianca', 'data_mapeamento', 'arquivo_hash'] },
         { name: 'categorias', headers: ['id', 'nome_xml', 'nome_display', 'ativa', 'pasta_drive_id'] },
-        { name: 'config', headers: ['chave', 'valor'] }
+        { name: 'config', headers: ['chave', 'valor'] },
+        { name: 'complementares', headers: ['id', 'entrada_id', 'arquivo_drive_id', 'arquivo_nome', 'descricao'] }
       ]);
 
       // Move spreadsheet into ComprovaLattes folder (if folder exists or create it)
@@ -485,7 +486,8 @@ function mountSettingsForm() {
         const spreadsheetId = await createSpreadsheet('ComprovaLattes', [
           { name: 'entradas', headers: ['id', 'titulo', 'instituicao', 'ano', 'carga_horaria', 'categoria', 'status', 'oculta', 'arquivo_drive_id', 'arquivo_nome', 'confianca', 'data_mapeamento', 'arquivo_hash'] },
           { name: 'categorias', headers: ['id', 'nome_xml', 'nome_display', 'ativa', 'pasta_drive_id'] },
-          { name: 'config', headers: ['chave', 'valor'] }
+          { name: 'config', headers: ['chave', 'valor'] },
+          { name: 'complementares', headers: ['id', 'entrada_id', 'arquivo_drive_id', 'arquivo_nome', 'descricao'] }
         ]);
 
         // Move spreadsheet into ComprovaLattes folder

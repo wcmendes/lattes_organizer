@@ -500,17 +500,17 @@ function renderMappedDetail(container, entry) {
         <p><strong>Confiança:</strong> ${confidence}</p>
         ${entry.data_mapeamento ? `<p><strong>Mapeado em:</strong> ${escapeHtml(entry.data_mapeamento)}</p>` : ''}
       </div>
-      ${previewHtml}
       <div class="entries-detail__actions mt-md">
         <button class="btn btn--danger btn--sm" id="btn-desvincular" type="button">Desvincular</button>
         <button class="btn btn--secondary btn--sm" id="btn-ocultar" type="button">👁‍🗨 Ocultar</button>
       </div>
-      <div class="entries-detail__complementares mt-lg">
+      <div class="entries-detail__complementares mt-md">
         <h4 style="font-size: 0.875rem; font-weight: 600; margin-bottom: 0.5rem;">📎 Anexos Complementares</h4>
         <div id="complementares-list">Carregando...</div>
         <button class="btn btn--outline btn--sm mt-sm" id="btn-add-complementar" type="button">+ Adicionar complementar</button>
         <input type="file" id="input-complementar-file" class="hidden" />
       </div>
+      ${previewHtml}
     </div>
   `;
 
