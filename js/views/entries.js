@@ -12,7 +12,7 @@ import { loadEntries } from '../core/entry-manager.js';
 import { loadCategories } from '../core/category-manager.js';
 import { categorySlug } from '../core/xml-parser.js';
 import { listFiles, moveFile, renameFile, findFolder, createFolder, downloadFile, deleteFile, uploadFile } from '../services/drive.js';
-import { updateRow, deleteRow } from '../services/sheets.js';
+import { updateRow, deleteRow, getRows, appendRows } from '../services/sheets.js';
 import { showSuccess, showError, showInfo } from '../ui/toast.js';
 import { loadConfig } from '../config.js';
 import { computeFileHash } from '../core/hash-utils.js';
@@ -505,6 +505,12 @@ function renderMappedDetail(container, entry) {
         <button class="btn btn--danger btn--sm" id="btn-desvincular" type="button">Desvincular</button>
         <button class="btn btn--secondary btn--sm" id="btn-ocultar" type="button">👁‍🗨 Ocultar</button>
       </div>
+      <div class="entries-detail__complementares mt-lg">
+        <h4 style="font-size: 0.875rem; font-weight: 600; margin-bottom: 0.5rem;">📎 Anexos Complementares</h4>
+        <div id="complementares-list">Carregando...</div>
+        <button class="btn btn--outline btn--sm mt-sm" id="btn-add-complementar" type="button">+ Adicionar complementar</button>
+        <input type="file" id="input-complementar-file" class="hidden" />
+      </div>
     </div>
   `;
 
@@ -518,6 +524,26 @@ function renderMappedDetail(container, entry) {
   const btnOcultar = document.getElementById('btn-ocultar');
   if (btnOcultar) {
     btnOcultar.addEventListener('click', () => handleOcultarEntry(entry));
+  }
+
+  // Complementares: load list and attach add handler
+  const complementaresContainer = document.getElementById('complementares-list');
+  if (complementaresContainer) {
+    renderComplementaresList(entry.id, complementaresContainer);
+  }
+
+  const btnAddComplementar = document.getElementById('btn-add-complementar');
+  const inputComplementarFile = document.getElementById('input-complementar-file');
+  if (btnAddComplementar && inputComplementarFile) {
+    btnAddComplementar.addEventListener('click', () => {
+      inputComplementarFile.click();
+    });
+    inputComplementarFile.addEventListener('change', async () => {
+      const file = inputComplementarFile.files[0];
+      if (!file) return;
+      await handleAddComplementar(entry, file);
+      inputComplementarFile.value = '';
+    });
   }
 }
 
@@ -1403,4 +1429,198 @@ function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str;
   return div.innerHTML;
+}
+
+// ---------------------------------------------------------------------------
+// Complementary Attachments (Anexos Complementares)
+// ---------------------------------------------------------------------------
+
+/**
+ * Generates a simple UUID v4.
+ * @returns {string}
+ */
+function generateUUID() {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
+/**
+ * Loads complementary attachments for a given entry from the "complementares" sheet tab.
+ * Returns empty array if the tab doesn't exist or has no data.
+ * @param {string} entryId
+ * @returns {Promise<Array<{id: string, entrada_id: string, arquivo_drive_id: string, arquivo_nome: string, descricao: string}>>}
+ */
+async function loadComplementares(entryId) {
+  try {
+    const config = loadConfig();
+    if (!config.spreadsheet_id) return [];
+
+    const rows = await getRows(config.spreadsheet_id, 'complementares');
+    return rows.filter(row => row.entrada_id === entryId);
+  } catch (error) {
+    // Tab doesn't exist or other error — graceful fallback
+    console.warn('[Entries] Complementares tab not available:', error.message);
+    return [];
+  }
+}
+
+/**
+ * Renders the list of complementary files for an entry into the given container.
+ * @param {string} entryId
+ * @param {HTMLElement} container
+ */
+async function renderComplementaresList(entryId, container) {
+  try {
+    const complementares = await loadComplementares(entryId);
+
+    if (complementares.length === 0) {
+      container.innerHTML = '<p class="text-muted" style="font-size: 0.8125rem;">Nenhum anexo complementar.</p>';
+      return;
+    }
+
+    let html = '<ul class="complementares-list" style="list-style: none; padding: 0; margin: 0;">';
+    for (const comp of complementares) {
+      const driveLink = comp.arquivo_drive_id
+        ? `https://drive.google.com/file/d/${encodeURIComponent(comp.arquivo_drive_id)}/view`
+        : '#';
+      html += `
+        <li class="complementar-item" style="display: flex; align-items: center; gap: 0.5rem; padding: 0.25rem 0; font-size: 0.8125rem;" data-comp-id="${escapeHtml(comp.id)}">
+          <a href="${driveLink}" target="_blank" rel="noopener noreferrer" style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escapeHtml(comp.arquivo_nome)}">${escapeHtml(comp.arquivo_nome || '(sem nome)')}</a>
+          <button class="btn btn--outline btn--sm btn-remove-complementar" data-comp-id="${escapeHtml(comp.id)}" data-comp-drive-id="${escapeHtml(comp.arquivo_drive_id)}" data-comp-nome="${escapeHtml(comp.arquivo_nome)}" type="button" title="Remover anexo" style="padding: 0.125rem 0.375rem; font-size: 0.75rem;">🗑</button>
+        </li>
+      `;
+    }
+    html += '</ul>';
+    container.innerHTML = html;
+
+    // Attach remove listeners
+    container.querySelectorAll('.btn-remove-complementar').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const compId = btn.dataset.compId;
+        const compDriveId = btn.dataset.compDriveId;
+        const compNome = btn.dataset.compNome;
+        await handleRemoveComplementar(entryId, compId, compDriveId, compNome, container);
+      });
+    });
+  } catch (error) {
+    container.innerHTML = '<p class="text-muted" style="font-size: 0.8125rem;">Erro ao carregar anexos complementares.</p>';
+    console.error('[Entries] Error rendering complementares:', error);
+  }
+}
+
+/**
+ * Handles adding a complementary file to an entry.
+ * Uploads the file to the same category folder in Drive, then records it in the "complementares" sheet.
+ * @param {Object} entry
+ * @param {File} file
+ */
+async function handleAddComplementar(entry, file) {
+  const config = loadConfig();
+  if (!config.spreadsheet_id || !config.root_folder_id) {
+    showError('Configuração incompleta. Verifique Planilha e Pasta raiz.');
+    return;
+  }
+
+  try {
+    // Find category folder (same as main file destination)
+    const category = allCategories.find(c => c.id === entry.categoria);
+    if (!category) {
+      showError('Categoria não encontrada para esta entrada.');
+      return;
+    }
+
+    const filesFolderId = await findFolder('files', config.root_folder_id);
+    if (!filesFolderId) {
+      showError('Pasta "files/" não encontrada no Drive.');
+      return;
+    }
+
+    const slug = categorySlug(category.nome_xml);
+    let categoryFolderId = await findFolder(slug, filesFolderId);
+    if (!categoryFolderId) {
+      categoryFolderId = await createFolder(slug, filesFolderId);
+    }
+
+    // Determine file name: {originalBaseName}_complementar_{N}.{ext}
+    const existingComps = await loadComplementares(entry.id);
+    const count = existingComps.length + 1;
+    const ext = getFileExtension(file.name);
+    const baseName = file.name.replace(/\.[^.]+$/, '');
+    const newFileName = `${baseName}_complementar_${count}${ext}`;
+
+    // Upload file to category folder
+    const uploadResult = await uploadFile(file, categoryFolderId, newFileName);
+
+    // Add row to "complementares" sheet
+    const compId = generateUUID();
+    await appendRows(config.spreadsheet_id, 'complementares', [
+      [compId, entry.id, uploadResult.id, newFileName, '']
+    ]);
+
+    showSuccess(`Anexo complementar adicionado: ${newFileName}`);
+
+    // Re-render complementares list
+    const container = document.getElementById('complementares-list');
+    if (container) {
+      await renderComplementaresList(entry.id, container);
+    }
+  } catch (error) {
+    // Check if it's a tab-not-found error
+    if (error.message && (error.message.includes('Unable to parse range') || error.message.includes('400'))) {
+      showError('Aba "complementares" não encontrada na planilha. Adicione a aba com headers: id, entrada_id, arquivo_drive_id, arquivo_nome, descricao');
+    } else {
+      showError(`Erro ao adicionar complementar: ${error.message}`);
+    }
+  }
+}
+
+/**
+ * Handles removing a complementary file.
+ * Deletes the file from Drive and removes the row from "complementares" sheet.
+ * @param {string} entryId
+ * @param {string} compId — ID of the complementar row
+ * @param {string} compDriveId — Drive file ID
+ * @param {string} compNome — file name (for display)
+ * @param {HTMLElement} container — container to re-render
+ */
+async function handleRemoveComplementar(entryId, compId, compDriveId, compNome, container) {
+  if (!confirm(`Remover o anexo complementar "${compNome}"? O arquivo será excluído do Drive.`)) {
+    return;
+  }
+
+  const config = loadConfig();
+  if (!config.spreadsheet_id) {
+    showError('Configuração incompleta.');
+    return;
+  }
+
+  try {
+    // Delete file from Drive
+    if (compDriveId) {
+      try {
+        await deleteFile(compDriveId);
+      } catch (driveError) {
+        console.warn('[Entries] Could not delete complementar file from Drive:', driveError.message);
+        // Continue anyway to remove the row
+      }
+    }
+
+    // Find and delete the row from "complementares" sheet
+    const rows = await getRows(config.spreadsheet_id, 'complementares');
+    const rowIndex = rows.findIndex(r => r.id === compId);
+    if (rowIndex !== -1) {
+      // rowIndex is 0-based in array, sheet row is rowIndex + 2 (header=1, 1-based)
+      await deleteRow(config.spreadsheet_id, 'complementares', rowIndex + 2);
+    }
+
+    showSuccess(`Anexo "${compNome}" removido.`);
+
+    // Re-render complementares list
+    await renderComplementaresList(entryId, container);
+  } catch (error) {
+    showError(`Erro ao remover complementar: ${error.message}`);
+  }
 }
