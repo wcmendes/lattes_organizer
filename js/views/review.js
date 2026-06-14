@@ -427,15 +427,18 @@ async function handleVincularFile(fileId, fileName) {
     const rootFolderId = config.root_folder_id;
 
     // Determine target folder for the category
-    const slug = categorySlug(entry.categoria || '');
-    let targetFolderId = await findFolder(slug, rootFolderId);
-    if (!targetFolderId) {
-      targetFolderId = await createFolder(slug, rootFolderId);
-    }
+    const category = allCategories.find(c => c.id === entry.categoria);
+    const slug = category ? categorySlug(category.nome_xml) : categorySlug(entry.categoria || '');
 
-    // Find the source folder (novos)
+    // Find the source folder (novos) and create target inside "files/"
     const filesFolderId = await findFolder('files', rootFolderId);
     const novosFolderId = await findFolder('novos', filesFolderId);
+    const parentForCategory = filesFolderId || rootFolderId;
+
+    let targetFolderId = await findFolder(slug, parentForCategory);
+    if (!targetFolderId) {
+      targetFolderId = await createFolder(slug, parentForCategory);
+    }
 
     // Build the new file name
     const ext = getFileExtension(fileName);
@@ -710,12 +713,17 @@ async function handleAccept() {
     const entry = item.suggestedEntry;
 
     // Determine target folder for the category
-    const slug = categorySlug(entry.categoria || '');
+    const categoryObj = allCategories.find(c => c.id === entry.categoria);
+    const slug = categoryObj ? categorySlug(categoryObj.nome_xml) : categorySlug(entry.categoria || '');
     const rootFolderId = config.root_folder_id;
 
-    let targetFolderId = await findFolder(slug, rootFolderId);
+    // Target folder should be inside "files/", not root
+    const filesFolderId = await findFolder('files', rootFolderId);
+    const parentForCategory = filesFolderId || rootFolderId;
+
+    let targetFolderId = await findFolder(slug, parentForCategory);
     if (!targetFolderId) {
-      targetFolderId = await createFolder(slug, rootFolderId);
+      targetFolderId = await createFolder(slug, parentForCategory);
     }
 
     // Build the new file name: ANO_tipo_INSTITUICAO_Titulo.ext (max 200 chars, ASCII-safe)
