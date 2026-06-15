@@ -2266,3 +2266,28 @@ textarea:focus-visible {
   gap: var(--spacing-xs);
   flex-shrink: 0;
 }
+
+
+/* Category header row with hide button */
+.entries-group__header-row {
+  display: flex;
+  align-items: center;
+}
+
+.entries-group__header-row .entries-group__header {
+  flex: 1;
+}
+
+.entries-group__hide-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  opacity: 0.3;
+  transition: opacity var(--transition-fast);
+  font-size: var(--font-size-sm);
+}
+
+.entries-group__hide-btn:hover {
+  opacity: 1;
+}

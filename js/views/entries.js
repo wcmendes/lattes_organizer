@@ -297,11 +297,14 @@ function renderEntries() {
 
     html += `
       <div class="entries-group">
-        <button class="entries-group__header" aria-expanded="true" data-category-id="${categoryId}">
-          <span class="entries-group__name">${escapeHtml(categoryName)}</span>
-          <span class="entries-group__count">${entries.length}</span>
-          <span class="entries-group__chevron" aria-hidden="true">▾</span>
-        </button>
+        <div class="entries-group__header-row">
+          <button class="entries-group__header" aria-expanded="true" data-category-id="${categoryId}">
+            <span class="entries-group__name">${escapeHtml(categoryName)}</span>
+            <span class="entries-group__count">${entries.length}</span>
+            <span class="entries-group__chevron" aria-hidden="true">▾</span>
+          </button>
+          <button class="entries-group__hide-btn" data-hide-category-id="${categoryId}" type="button" title="Desativar categoria">🚫</button>
+        </div>
         <div class="entries-group__body">
           ${entries.map(entry => renderEntryItem(entry)).join('')}
         </div>
@@ -341,13 +344,43 @@ function renderEntries() {
     btn.addEventListener('click', () => {
       const expanded = btn.getAttribute('aria-expanded') === 'true';
       btn.setAttribute('aria-expanded', String(!expanded));
-      const body = btn.nextElementSibling;
+      const body = btn.closest('.entries-group').querySelector('.entries-group__body');
       if (body) {
         body.classList.toggle('entries-group__body--collapsed');
       }
       const chevron = btn.querySelector('.entries-group__chevron');
       if (chevron) {
         chevron.textContent = expanded ? '▸' : '▾';
+      }
+    });
+  });
+
+  // Attach category hide buttons
+  listEl.querySelectorAll('.entries-group__hide-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const categoryId = btn.dataset.hideCategoryId;
+      const category = allCategories.find(c => c.id === categoryId);
+      if (!category) return;
+      if (!confirm(`Desativar categoria "${category.nome_display || category.nome_xml}"? As entradas não serão excluídas, apenas ocultadas da listagem.`)) return;
+
+      try {
+        const config = loadConfig();
+        const catIndex = allCategories.findIndex(c => c.id === categoryId);
+        if (catIndex === -1) return;
+        const rowIndex = catIndex + 2;
+        allCategories[catIndex].ativa = false;
+        await updateRow(config.spreadsheet_id, 'categorias', rowIndex, {
+          id: category.id,
+          nome_xml: category.nome_xml,
+          nome_display: category.nome_display,
+          ativa: 'FALSE',
+          pasta_drive_id: category.pasta_drive_id || ''
+        });
+        showSuccess(`Categoria "${category.nome_display}" desativada. Reative em "Ocultos".`);
+        renderEntries();
+      } catch (err) {
+        showError(`Erro ao desativar: ${err.message}`);
       }
     });
   });

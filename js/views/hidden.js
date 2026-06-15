@@ -145,33 +145,48 @@ function _renderContent(hiddenItems) {
   const visibleHiddenEntries = hiddenEntries.filter(e => activeCategoryIds.has(e.categoria));
 
   if (visibleHiddenEntries.length > 0) {
+    // Group by category
+    const groupedByCategory = new Map();
+    for (const entry of visibleHiddenEntries) {
+      if (!groupedByCategory.has(entry.categoria)) {
+        groupedByCategory.set(entry.categoria, []);
+      }
+      groupedByCategory.get(entry.categoria).push(entry);
+    }
+
     html += `
       <section class="hidden-view__section" aria-labelledby="hidden-entries-heading">
         <h2 id="hidden-entries-heading" class="hidden-view__section-title">Entradas Ocultas</h2>
-        <ul class="hidden-view__list" role="list">
-          ${visibleHiddenEntries.map(entry => {
-            const category = categories.find(c => c.id === entry.categoria);
-            const categoryName = category ? (category.nome_display || category.nome_xml) : '';
-            return `
-              <li class="hidden-view__item card" data-entry-id="${_escapeAttr(entry.id)}">
-                <div class="hidden-view__item-info">
-                  <span class="hidden-view__item-name">${_escapeHtml(entry.titulo)}</span>
-                  <span class="hidden-view__item-detail">${_escapeHtml(entry.instituicao)}${categoryName ? ' — ' + _escapeHtml(categoryName) : ''}</span>
-                </div>
-                <button
-                  class="btn btn--outline btn--sm hidden-view__btn-reactivate"
-                  data-action="unhide-entry"
-                  data-entry-id="${_escapeAttr(entry.id)}"
-                  type="button"
-                >
-                  Tornar Visível
-                </button>
-              </li>
-            `;
-          }).join('')}
-        </ul>
-      </section>
     `;
+
+    for (const [categoryId, entriesInCat] of groupedByCategory) {
+      const category = categories.find(c => c.id === categoryId);
+      const categoryName = category ? (category.nome_display || category.nome_xml) : 'Sem Categoria';
+
+      html += `
+        <h3 style="font-size: 0.9rem; font-weight: 600; color: var(--color-text-secondary); margin: 1rem 0 0.5rem; padding-left: 0.5rem;">${_escapeHtml(categoryName)} (${entriesInCat.length})</h3>
+        <ul class="hidden-view__list" role="list">
+          ${entriesInCat.map(entry => `
+            <li class="hidden-view__item card" data-entry-id="${_escapeAttr(entry.id)}">
+              <div class="hidden-view__item-info">
+                <span class="hidden-view__item-name">${_escapeHtml(entry.titulo)}</span>
+                <span class="hidden-view__item-detail">${_escapeHtml(entry.instituicao || '')}${entry.ano ? ' • ' + _escapeHtml(entry.ano) : ''}</span>
+              </div>
+              <button
+                class="btn btn--outline btn--sm hidden-view__btn-reactivate"
+                data-action="unhide-entry"
+                data-entry-id="${_escapeAttr(entry.id)}"
+                type="button"
+              >
+                Tornar Visível
+              </button>
+            </li>
+          `).join('')}
+        </ul>
+      `;
+    }
+
+    html += `</section>`;
   }
 
   // If we have hidden categories but no visible hidden entries in active categories,
