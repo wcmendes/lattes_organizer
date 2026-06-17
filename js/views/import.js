@@ -293,6 +293,11 @@ async function handleImport(file) {
     const summary = buildXmlSummary(totalEntries, totalCategories, parseResult.errors);
     showSuccess(summary);
 
+    // Reload page after short delay to refresh all local data arrays
+    setTimeout(() => {
+      window.location.reload();
+    }, 2000);
+
   } catch (error) {
     hideOverlay();
     showError(`Erro na importação: ${error.message}`);
