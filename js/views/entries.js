@@ -405,6 +405,9 @@ function renderEntryItem(entry) {
     displayTitle = `${tipoDisplay} — ${entry.instituicao || entry.titulo || ''}`;
   }
 
+  const descricao = entry.descricao || '';
+  const descricaoTruncated = descricao.length > 120 ? descricao.substring(0, 120) + '...' : descricao;
+
   return `
     <div class="entry-item ${statusClass}" data-entry-id="${entry.id}" role="listitem" tabindex="0">
       <span class="entry-item__status" aria-label="${getStatusLabel(entry.status)}">${statusIcon}</span>
@@ -413,6 +416,7 @@ function renderEntryItem(entry) {
         <span class="entry-item__meta">
           ${entry.instituicao ? escapeHtml(entry.instituicao) : ''}${entry.instituicao && entry.ano ? ' • ' : ''}${entry.ano || ''}
         </span>
+        ${descricaoTruncated ? `<span class="entry-item__desc">${escapeHtml(descricaoTruncated)}</span>` : ''}
         ${arquivo ? `<span class="entry-item__file">${arquivo}</span>` : ''}
       </div>
       <button class="entry-item__hide-btn" data-hide-entry-id="${entry.id}" type="button" title="Ocultar entrada" aria-label="Ocultar">🚫</button>
@@ -723,7 +727,8 @@ async function handleManterRemovida(entry) {
       arquivo_nome: updatedEntry.arquivo_nome || '',
       confianca: updatedEntry.confianca !== null ? String(updatedEntry.confianca) : '',
       data_mapeamento: updatedEntry.data_mapeamento || '',
-      arquivo_hash: updatedEntry.arquivo_hash || ''
+      arquivo_hash: updatedEntry.arquivo_hash || '',
+      descricao: updatedEntry.descricao || ''
     });
 
     // Update local state
@@ -1003,7 +1008,8 @@ async function handleOcultarEntry(entry) {
       arquivo_nome: updatedEntry.arquivo_nome || '',
       confianca: updatedEntry.confianca !== null ? String(updatedEntry.confianca) : '',
       data_mapeamento: updatedEntry.data_mapeamento || '',
-      arquivo_hash: updatedEntry.arquivo_hash || ''
+      arquivo_hash: updatedEntry.arquivo_hash || '',
+      descricao: updatedEntry.descricao || ''
     });
 
     allEntries[entryIndex] = updatedEntry;
@@ -1111,7 +1117,8 @@ async function handleVincular(entry, fileId, fileName) {
       arquivo_nome: updatedEntry.arquivo_nome || '',
       confianca: updatedEntry.confianca !== null ? String(updatedEntry.confianca) : '',
       data_mapeamento: updatedEntry.data_mapeamento || '',
-      arquivo_hash: updatedEntry.arquivo_hash || ''
+      arquivo_hash: updatedEntry.arquivo_hash || '',
+      descricao: updatedEntry.descricao || ''
     });
 
     // Update local state
@@ -1260,7 +1267,8 @@ async function handleVincularWithHash(entry, fileId, fileName, fileHash) {
       arquivo_nome: updatedEntry.arquivo_nome || '',
       confianca: updatedEntry.confianca !== null ? String(updatedEntry.confianca) : '',
       data_mapeamento: updatedEntry.data_mapeamento || '',
-      arquivo_hash: updatedEntry.arquivo_hash || ''
+      arquivo_hash: updatedEntry.arquivo_hash || '',
+      descricao: updatedEntry.descricao || ''
     });
 
     // Update local state
@@ -1363,7 +1371,8 @@ async function handleDesvincular(entry) {
       arquivo_nome: '',
       confianca: '',
       data_mapeamento: '',
-      arquivo_hash: ''
+      arquivo_hash: '',
+      descricao: updatedEntry.descricao || ''
     });
 
     // Update local state

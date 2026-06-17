@@ -305,13 +305,14 @@ function getCategoryForPatternB(element, parentSection) {
  * Extracts entry data from a Pattern A element (has DADOS-BASICOS-* + DETALHAMENTO-* children).
  * 
  * @param {Element} activityElement
- * @returns {{titulo: string, instituicao: string, ano: string, carga_horaria: string}}
+ * @returns {{titulo: string, instituicao: string, ano: string, carga_horaria: string, descricao: string}}
  */
 function extractPatternA(activityElement) {
   let titulo = '';
   let ano = '';
   let instituicao = '';
   let carga_horaria = '';
+  let descricao = '';
 
   const children = activityElement.children;
   for (let i = 0; i < children.length; i++) {
@@ -346,6 +347,7 @@ function extractPatternA(activityElement) {
       if (!instituicao) instituicao = child.getAttribute('TITULO-DO-PERIODICO-OU-REVISTA') || '';
       if (!instituicao) instituicao = child.getAttribute('NOME-DA-PLATAFORMA') || '';
       carga_horaria = child.getAttribute('CARGA-HORARIA') || '';
+      descricao = child.getAttribute('OUTRAS-INFORMACOES') || '';
       
       // Handle NOME-DO-EVENTO:
       const genericTitles = new Set(['OUTRA', 'CONGRESSO', 'SIMPOSIO', 'SEMINARIO', 'ENCONTRO', 'OFICINA', 'CONFERENCIA', 'WORKSHOP', 'FEIRA', 'FESTIVAL', 'EXPOSICAO', 'COMPLETO', 'RESUMO', 'RESUMO_EXPANDIDO']);
@@ -368,22 +370,23 @@ function extractPatternA(activityElement) {
     }
   }
 
-  return { titulo, instituicao, ano, carga_horaria };
+  return { titulo, instituicao, ano, carga_horaria, descricao };
 }
 
 /**
  * Extracts entry data from a Pattern B element (attributes directly on element).
  * 
  * @param {Element} element
- * @returns {{titulo: string, instituicao: string, ano: string, carga_horaria: string}}
+ * @returns {{titulo: string, instituicao: string, ano: string, carga_horaria: string, descricao: string}}
  */
 function extractPatternB(element) {
   const titulo = getFirstAttr(element, TITLE_ATTRS);
   const instituicao = getFirstAttr(element, INSTITUTION_ATTRS);
   const ano = getFirstAttr(element, YEAR_ATTRS);
   const carga_horaria = getFirstAttr(element, HOURS_ATTRS);
+  const descricao = element.getAttribute('OUTRAS-INFORMACOES') || '';
 
-  return { titulo, instituicao, ano, carga_horaria };
+  return { titulo, instituicao, ano, carga_horaria, descricao };
 }
 
 /**
@@ -421,7 +424,7 @@ function getPatternBParent(element) {
 /**
  * Creates a standard entry object.
  * 
- * @param {{titulo: string, instituicao: string, ano: string, carga_horaria: string}} data
+ * @param {{titulo: string, instituicao: string, ano: string, carga_horaria: string, descricao: string}} data
  * @param {string} categoryId
  * @returns {object}
  */
@@ -439,6 +442,7 @@ function createEntry(data, categoryId) {
     arquivo_nome: null,
     confianca: null,
     data_mapeamento: null,
+    descricao: data.descricao || '',
   };
 }
 
@@ -732,6 +736,7 @@ export function parseXml(xmlContent) {
           const anoInicio = vinculo.getAttribute('ANO-INICIO') || '';
           const anoFim = vinculo.getAttribute('ANO-FIM') || '';
           const cargaHoraria = vinculo.getAttribute('CARGA-HORARIA-SEMANAL') || '';
+          const descricao = vinculo.getAttribute('OUTRAS-INFORMACOES') || '';
           
           // Build title from cargo + institution
           const titulo = cargo ? `${cargo} — ${nomeInstituicao}` : nomeInstituicao;
@@ -741,7 +746,7 @@ export function parseXml(xmlContent) {
           
           const categoryName = 'ATUACAO-PROFISSIONAL';
           const category = ensureCategory(categoriesMap, categoryName);
-          entries.push(createEntry({ titulo, instituicao: nomeInstituicao, ano, carga_horaria: cargaHoraria }, category.id));
+          entries.push(createEntry({ titulo, instituicao: nomeInstituicao, ano, carga_horaria: cargaHoraria, descricao }, category.id));
           processedElements.add(vinculo);
         }
         
@@ -883,11 +888,11 @@ export function parseXml(xmlContent) {
     // Silently skip
   }
 
-  // Deduplicate entries by titulo + ano + instituicao + categoria
+  // Deduplicate entries by titulo + ano + instituicao + categoria + carga_horaria
   const seen = new Set();
   const deduplicatedEntries = [];
   for (const entry of entries) {
-    const key = `${(entry.titulo || '').toLowerCase().trim()}|${entry.ano || ''}|${(entry.instituicao || '').toLowerCase().trim()}|${entry.categoria}`;
+    const key = `${(entry.titulo || '').toLowerCase().trim()}|${entry.ano || ''}|${(entry.instituicao || '').toLowerCase().trim()}|${entry.categoria}|${entry.carga_horaria || ''}`;
     if (!seen.has(key)) {
       seen.add(key);
       deduplicatedEntries.push(entry);

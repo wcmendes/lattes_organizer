@@ -1742,6 +1742,13 @@ textarea:focus-visible {
   text-overflow: ellipsis;
 }
 
+.entry-item__desc {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  line-height: 1.3;
+  word-break: break-word;
+}
+
 /* Detail Panel */
 .entries-detail {
   background-color: var(--color-surface);

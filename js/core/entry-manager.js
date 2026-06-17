@@ -25,7 +25,8 @@ const CATEGORIES_SHEET = 'categorias';
 const ENTRY_COLUMNS = [
   'id', 'titulo', 'instituicao', 'ano', 'carga_horaria',
   'categoria', 'status', 'oculta', 'arquivo_drive_id',
-  'arquivo_nome', 'confianca', 'data_mapeamento', 'arquivo_hash'
+  'arquivo_nome', 'confianca', 'data_mapeamento', 'arquivo_hash',
+  'descricao'
 ];
 
 /**
@@ -116,15 +117,37 @@ export function mergeEntries(existingEntries, newEntries) {
 
   const merged = [];
   const processedExistingKeys = new Set();
+  const processedExistingIds = new Set();
+
+  // Build secondary index for fallback matching (mapped entries by instituicao+ano+categoria)
+  const existingMappedByPartialKey = new Map();
+  for (const entry of existingEntries) {
+    if (entry.arquivo_drive_id) {
+      const partialKey = `${(entry.instituicao || '').trim().toLowerCase()}|${(entry.ano || '').trim()}|${(entry.categoria || '').trim().toLowerCase()}`;
+      if (!existingMappedByPartialKey.has(partialKey)) {
+        existingMappedByPartialKey.set(partialKey, []);
+      }
+      existingMappedByPartialKey.get(partialKey).push(entry);
+    }
+  }
 
   // (1) e (2): Processar todas as novas entradas
   for (const newEntry of newEntries) {
     const key = _entryKey(newEntry);
-    const existing = existingByKey.get(key);
+    let existing = existingByKey.get(key);
+
+    // Fallback: if no exact match, try partial match for mapped entries (preserves files)
+    if (!existing) {
+      const partialKey = `${(newEntry.instituicao || '').trim().toLowerCase()}|${(newEntry.ano || '').trim()}|${(newEntry.categoria || '').trim().toLowerCase()}`;
+      const candidates = existingMappedByPartialKey.get(partialKey) || [];
+      // Find a mapped candidate that hasn't been processed yet
+      existing = candidates.find(c => !processedExistingIds.has(c.id));
+    }
 
     if (existing) {
       // Match encontrado: preservar mapeamentos existentes
-      processedExistingKeys.add(key);
+      processedExistingKeys.add(_entryKey(existing));
+      processedExistingIds.add(existing.id);
       merged.push({
         ...newEntry,
         id: existing.id, // preserva o ID original
@@ -149,7 +172,7 @@ export function mergeEntries(existingEntries, newEntries) {
   // (3): Entradas existentes ausentes no novo XML → marcar como "removida"
   for (const existing of existingEntries) {
     const key = _entryKey(existing);
-    if (!processedExistingKeys.has(key)) {
+    if (!processedExistingKeys.has(key) && !processedExistingIds.has(existing.id)) {
       merged.push({
         ...existing,
         status: 'removida',
@@ -203,6 +226,7 @@ export async function loadEntries(spreadsheetId) {
     confianca: row.confianca !== '' && row.confianca !== undefined ? Number(row.confianca) : null,
     data_mapeamento: row.data_mapeamento || null,
     arquivo_hash: row.arquivo_hash || '',
+    descricao: row.descricao || '',
   }));
 }
 
@@ -359,6 +383,7 @@ function _serializeEntry(entry) {
     entry.confianca !== null && entry.confianca !== undefined ? String(entry.confianca) : '',
     entry.data_mapeamento || '',
     entry.arquivo_hash || '',
+    entry.descricao || '',
   ];
 }
 
@@ -396,7 +421,7 @@ async function _saveEntriesToSheet(entries, spreadsheetId) {
   const rows = entries.map(e => _serializeEntry(e));
 
   // Usa batchUpdate para escrever todas as linhas a partir da linha 2 (header é linha 1)
-  const range = `${ENTRIES_SHEET}!A2:M${rows.length + 1}`;
+  const range = `${ENTRIES_SHEET}!A2:N${rows.length + 1}`;
   await batchUpdate(spreadsheetId, [
     { range, values: rows }
   ]);

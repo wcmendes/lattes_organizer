@@ -469,6 +469,7 @@ async function handleVincularFile(fileId, fileName) {
         confianca: '',
         data_mapeamento: now,
         arquivo_hash: entry.arquivo_hash || '',
+        descricao: entry.descricao || '',
       });
     }
 
@@ -755,6 +756,7 @@ async function handleAccept() {
         confianca: String(item.score),
         data_mapeamento: now,
         arquivo_hash: entry.arquivo_hash || '',
+        descricao: entry.descricao || '',
       });
     }
 

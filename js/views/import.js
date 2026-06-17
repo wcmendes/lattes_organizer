@@ -647,7 +647,8 @@ async function handleAutoAccept(
       arquivo_nome: newName,
       confianca: String(score),
       data_mapeamento: new Date().toISOString().split('T')[0],
-      arquivo_hash: fileHash || ''
+      arquivo_hash: fileHash || '',
+      descricao: entry.descricao || ''
     });
 
     // Update local entry state for subsequent files in the batch
