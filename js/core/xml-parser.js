@@ -888,11 +888,12 @@ export function parseXml(xmlContent) {
     // Silently skip
   }
 
-  // Deduplicate entries by titulo + ano + instituicao + categoria + carga_horaria
+  // Deduplicate entries by titulo + ano + instituicao + categoria + carga_horaria + descricao
   const seen = new Set();
   const deduplicatedEntries = [];
   for (const entry of entries) {
-    const key = `${(entry.titulo || '').toLowerCase().trim()}|${entry.ano || ''}|${(entry.instituicao || '').toLowerCase().trim()}|${entry.categoria}|${entry.carga_horaria || ''}`;
+    const descShort = (entry.descricao || '').substring(0, 50).toLowerCase().trim();
+    const key = `${(entry.titulo || '').toLowerCase().trim()}|${entry.ano || ''}|${(entry.instituicao || '').toLowerCase().trim()}|${entry.categoria}|${entry.carga_horaria || ''}|${descShort}`;
     if (!seen.has(key)) {
       seen.add(key);
       deduplicatedEntries.push(entry);

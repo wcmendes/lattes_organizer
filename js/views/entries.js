@@ -406,7 +406,6 @@ function renderEntryItem(entry) {
   }
 
   const descricao = entry.descricao || '';
-  const descricaoTruncated = descricao.length > 120 ? descricao.substring(0, 120) + '...' : descricao;
 
   return `
     <div class="entry-item ${statusClass}" data-entry-id="${entry.id}" role="listitem" tabindex="0">
@@ -416,7 +415,7 @@ function renderEntryItem(entry) {
         <span class="entry-item__meta">
           ${entry.instituicao ? escapeHtml(entry.instituicao) : ''}${entry.instituicao && entry.ano ? ' • ' : ''}${entry.ano || ''}
         </span>
-        ${descricaoTruncated ? `<span class="entry-item__desc">${escapeHtml(descricaoTruncated)}</span>` : ''}
+        ${descricao ? `<span class="entry-item__desc">${escapeHtml(descricao)}</span>` : ''}
         ${arquivo ? `<span class="entry-item__file">${arquivo}</span>` : ''}
       </div>
       <button class="entry-item__hide-btn" data-hide-entry-id="${entry.id}" type="button" title="Ocultar entrada" aria-label="Ocultar">🚫</button>
