@@ -892,7 +892,7 @@ export function parseXml(xmlContent) {
   const seen = new Set();
   const deduplicatedEntries = [];
   for (const entry of entries) {
-    const descShort = (entry.descricao || '').substring(0, 50).toLowerCase().trim();
+    const descShort = (entry.descricao || '').substring(0, 100).toLowerCase().trim();
     const key = `${(entry.titulo || '').toLowerCase().trim()}|${entry.ano || ''}|${(entry.instituicao || '').toLowerCase().trim()}|${entry.categoria}|${entry.carga_horaria || ''}|${descShort}`;
     if (!seen.has(key)) {
       seen.add(key);
