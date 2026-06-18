@@ -18,6 +18,7 @@ import { loadCategories } from '../core/category-manager.js';
 import { loadConfig } from '../config.js';
 import { showError, showSuccess } from '../ui/toast.js';
 import { exportToDrive, exportToZip } from '../core/exporter.js';
+import { listFiles, findFolder } from '../services/drive.js';
 
 /**
  * Renders the dashboard view HTML (static shell).
@@ -50,6 +51,7 @@ export function render() {
 export function mount() {
   _loadAndRender();
   _attachExportListeners();
+  _loadStorageInfo();
 }
 
 // ---------------------------------------------------------------------------
@@ -156,6 +158,16 @@ function _renderDashboard(entries, categories) {
     </section>
     `;
   }
+
+  // Storage section
+  html += `
+    <section class="dashboard-section">
+      <h2 class="dashboard-section__title">Armazenamento</h2>
+      <div id="dashboard-storage">
+        <p class="text-muted">Calculando tamanho dos arquivos...</p>
+      </div>
+    </section>
+  `;
 
   // Export section
   html += `
@@ -318,4 +330,122 @@ function _escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str;
   return div.innerHTML;
+}
+
+
+// ---------------------------------------------------------------------------
+// Internal: Storage Info
+// ---------------------------------------------------------------------------
+
+/**
+ * Loads storage information: total files count and size from Drive.
+ * Scans all subfolders in "files/" (excluding novos/) to get mapped file sizes.
+ * @private
+ */
+async function _loadStorageInfo() {
+  const container = document.getElementById('dashboard-storage');
+  if (!container) return;
+
+  try {
+    const config = loadConfig();
+    if (!config.root_folder_id) {
+      container.innerHTML = '<p class="text-muted">Pasta raiz não configurada.</p>';
+      return;
+    }
+
+    const filesFolderId = await findFolder('files', config.root_folder_id);
+    if (!filesFolderId) {
+      container.innerHTML = '<p class="text-muted">Pasta "files/" não encontrada.</p>';
+      return;
+    }
+
+    // Get all subfolders (categories)
+    const subItems = await listFiles(filesFolderId);
+    let totalFiles = 0;
+    let totalSize = 0;
+    const categoryStats = [];
+
+    for (const item of subItems) {
+      if (item.mimeType === 'application/vnd.google-apps.folder' && item.name !== 'novos') {
+        const files = await listFiles(item.id);
+        const folderFiles = files.filter(f => f.mimeType !== 'application/vnd.google-apps.folder');
+        const folderSize = folderFiles.reduce((sum, f) => sum + (parseInt(f.size) || 0), 0);
+        totalFiles += folderFiles.length;
+        totalSize += folderSize;
+
+        if (folderFiles.length > 0) {
+          categoryStats.push({
+            name: item.name,
+            count: folderFiles.length,
+            size: folderSize
+          });
+        }
+      }
+    }
+
+    // Also count files in "novos/"
+    const novosFolderId = await findFolder('novos', filesFolderId);
+    let novosCount = 0;
+    let novosSize = 0;
+    if (novosFolderId) {
+      const novosFiles = await listFiles(novosFolderId);
+      const novosActualFiles = novosFiles.filter(f => f.mimeType !== 'application/vnd.google-apps.folder');
+      novosCount = novosActualFiles.length;
+      novosSize = novosActualFiles.reduce((sum, f) => sum + (parseInt(f.size) || 0), 0);
+    }
+
+    // Render
+    let html = `
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin-bottom: 1rem;">
+        <div class="card" style="padding: 1rem; text-align: center;">
+          <div style="font-size: 1.5rem; font-weight: 700; color: var(--color-primary);">${totalFiles}</div>
+          <div style="font-size: 0.8rem; color: var(--color-text-muted);">Arquivos mapeados</div>
+        </div>
+        <div class="card" style="padding: 1rem; text-align: center;">
+          <div style="font-size: 1.5rem; font-weight: 700; color: var(--color-primary);">${_formatSize(totalSize)}</div>
+          <div style="font-size: 0.8rem; color: var(--color-text-muted);">Tamanho total</div>
+        </div>
+        <div class="card" style="padding: 1rem; text-align: center;">
+          <div style="font-size: 1.5rem; font-weight: 700; color: var(--color-text-muted);">${novosCount}</div>
+          <div style="font-size: 0.8rem; color: var(--color-text-muted);">Sem match (novos/)</div>
+        </div>
+        <div class="card" style="padding: 1rem; text-align: center;">
+          <div style="font-size: 1.5rem; font-weight: 700; color: var(--color-text-muted);">${_formatSize(totalSize + novosSize)}</div>
+          <div style="font-size: 0.8rem; color: var(--color-text-muted);">Total geral</div>
+        </div>
+      </div>
+    `;
+
+    if (categoryStats.length > 0) {
+      html += '<details><summary style="cursor:pointer; font-size:0.875rem; color:var(--color-text-secondary);">Detalhes por categoria</summary>';
+      html += '<table style="width:100%; font-size:0.8rem; margin-top:0.5rem; border-collapse:collapse;">';
+      html += '<tr style="border-bottom:1px solid var(--color-border);"><th style="text-align:left;padding:0.25rem;">Categoria</th><th style="text-align:right;padding:0.25rem;">Arquivos</th><th style="text-align:right;padding:0.25rem;">Tamanho</th></tr>';
+      for (const stat of categoryStats.sort((a, b) => b.size - a.size)) {
+        html += `<tr style="border-bottom:1px solid var(--color-border);"><td style="padding:0.25rem;">${_escapeHtml(stat.name)}</td><td style="text-align:right;padding:0.25rem;">${stat.count}</td><td style="text-align:right;padding:0.25rem;">${_formatSize(stat.size)}</td></tr>`;
+      }
+      html += '</table></details>';
+    }
+
+    container.innerHTML = html;
+  } catch (err) {
+    container.innerHTML = `<p class="text-muted">Erro ao calcular armazenamento: ${err.message}</p>`;
+  }
+}
+
+/**
+ * Formats bytes into human-readable size string.
+ * @param {number} bytes
+ * @returns {string}
+ * @private
+ */
+function _formatSize(bytes) {
+  if (!bytes || bytes === 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let i = 0;
+  let size = bytes;
+  while (size >= 1024 && i < units.length - 1) {
+    size /= 1024;
+    i++;
+  }
+  return `${size.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 }
