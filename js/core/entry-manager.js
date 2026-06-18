@@ -180,6 +180,20 @@ export function mergeEntries(existingEntries, newEntries) {
     }
   }
 
+  // Sanity check: ensure no duplicate IDs exist
+  const seenIds = new Set();
+  for (const entry of merged) {
+    if (seenIds.has(entry.id)) {
+      // Generate a new unique ID for this duplicate
+      entry.id = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        const r = Math.random() * 16 | 0;
+        const v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+      });
+    }
+    seenIds.add(entry.id);
+  }
+
   return merged;
 }
 
